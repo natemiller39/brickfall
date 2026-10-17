@@ -2,7 +2,7 @@
 
 An arcade block breaker built for iPhone: 10 levels plus rotating bosses (Dragon, Mothership, Star Cruiser, Hive Queen), flying creatures, bonus objectives, lava levels, and 10 power-ups.
 
-**Play:** https://natemiller39.github.io/brickfall/
+**Play:** https://brickfall.onrender.com
 
 On iPhone, open the link in Safari, tap Share, then **Add to Home Screen** to play it full screen like an app.
 
