@@ -7,7 +7,7 @@ An arcade block breaker built for iPhone: 10 levels plus rotating bosses (Dragon
 On iPhone, open the link in Safari, tap Share, then **Add to Home Screen** to play it full screen like an app.
 
 - Pause any time and tap **Save & quit**; tap **Continue** next time to pick up where you left off. Saves stay on the device for the current week.
-- Shared weekly top 10 for everyone who plays the site, reset every Monday at midnight Pacific.
+- Shared top 10 for everyone who plays the site, in 2-week seasons that reset every other Monday at midnight Pacific (first season ends Nov 2, 2026).
 
 ## Leaderboard server
 

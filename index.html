@@ -120,7 +120,7 @@ li:nth-child(1) .rk{color:var(--amber)} li:nth-child(2) .rk{color:#d8dcf5} li:nt
         <div class="row"><button class="btn" id="contBtn" type="button" hidden>Continue</button><button class="btn" id="startBtn" type="button">Play</button></div>
         <div class="note" id="saveNote"></div>
       </div>
-      <div class="ov" id="ovPause" hidden><h2>Paused</h2><p>Take a break. Save &amp; quit keeps your level, score and lives until you come back this week.</p><div class="row"><button class="btn" id="resumeBtn" type="button">Resume</button><button class="btn ghost" id="saveBtn" type="button">Save &amp; quit</button></div><div class="note" id="pauseNote"></div></div>
+      <div class="ov" id="ovPause" hidden><h2>Paused</h2><p>Take a break. Save &amp; quit keeps your level, score and lives until you come back this season.</p><div class="row"><button class="btn" id="resumeBtn" type="button">Resume</button><button class="btn ghost" id="saveBtn" type="button">Save &amp; quit</button></div><div class="note" id="pauseNote"></div></div>
       <div class="ov" id="ovOver" hidden>
         <h2 id="overTitle">Game over</h2>
         <div class="big" id="overScore">0</div>
@@ -135,10 +135,10 @@ li:nth-child(1) .rk{color:var(--amber)} li:nth-child(2) .rk{color:#d8dcf5} li:nt
   </section>
 
   <aside class="board">
-    <div class="bhead"><h3>This week's top 10</h3><span class="reset" id="resetIn"></span></div>
-    <p class="sub" id="weekLabel">Resets every Monday at midnight Pacific.</p>
+    <div class="bhead"><h3>Season top 10</h3><span class="reset" id="resetIn"></span></div>
+    <p class="sub" id="weekLabel">Resets every other Monday at midnight Pacific.</p>
     <ol class="lb" id="lb"><li class="empty" style="display:block;background:none">Loading the board…</li></ol>
-    <div class="hof"><h4>Past weekly champions</h4><ul id="hof"><li><span>No finished weeks yet.</span></li></ul></div>
+    <div class="hof"><h4>Past season champions</h4><ul id="hof"><li><span>No finished seasons yet.</span></li></ul></div>
     <div class="legend">
       <div><span class="pill" style="background:var(--teal)">W</span>Wide paddle</div>
       <div><span class="pill" style="background:var(--violet)">M</span>Multiball</div>
@@ -356,7 +356,7 @@ async function clearSave(){
 async function readSave(){
   let d=null;try{d=JSON.parse(localStorage.getItem('bf_save')||'null')}catch(e){}
   if(db&&uid){try{const sn=await db.collection('data/users/'+uid).doc('save').get();if(sn.exists){const rd=sn.data();if(!d||rd.at>d.at)d=JSON.parse(JSON.stringify(rd))}}catch(e){}}
-  if(d&&d.week!==weekKey()){clearSave();$('saveNote').textContent='Your saved game was from last week, so it was cleared for the new leaderboard.';return}
+  if(d&&d.week!==weekKey()){clearSave();$('saveNote').textContent='Your saved game was from last season, so it was cleared for the new leaderboard.';return}
   if(d&&state==='title'){saveData=d;refreshContinue()}
 }
 function refreshContinue(){
@@ -744,10 +744,14 @@ loadLevel();banner=null;requestAnimationFrame(frame);
 // ---------- Week math (Pacific time, resets Monday 00:00)
 function laNow(){const p={};new Intl.DateTimeFormat('en-US',{timeZone:'America/Los_Angeles',year:'numeric',month:'numeric',day:'numeric',weekday:'short',hour:'numeric',minute:'numeric',hourCycle:'h23'}).formatToParts(new Date()).forEach(x=>p[x.type]=x.value);
   const wd=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].indexOf(p.weekday);return {y:+p.year,m:+p.month,d:+p.day,wd,h:+p.hour,min:+p.minute}}
-function weekKey(){const n=laNow();const dt=new Date(Date.UTC(n.y,n.m-1,n.d-n.wd));return dt.toISOString().slice(0,10)}
+// Seasons: the first runs Oct 12 - Nov 2 2026, then every 2 weeks, resetting Monday 00:00 Pacific.
+const DAY=86400000,S1=Date.UTC(2026,9,12),S2=Date.UTC(2026,10,2),SLEN=14*DAY;
+function seasonStart(n){const mon=Date.UTC(n.y,n.m-1,n.d-n.wd);return mon<S2?S1:S2+SLEN*Math.floor((mon-S2)/SLEN)}
+function weekKey(){return new Date(seasonStart(laNow())).toISOString().slice(0,10)}
 function weekLabel(k){const d=new Date(k+'T12:00:00Z');return d.toLocaleDateString('en-US',{month:'short',day:'numeric',timeZone:'UTC'})}
-function resetText(){const n=laNow();let mins=((7-n.wd)*24-n.h)*60-n.min;const d=Math.floor(mins/1440),h=Math.floor(mins%1440/60),m=mins%60;return 'Resets in '+(d?`${d}d ${h}h`:h?`${h}h ${m}m`:`${m}m`)}
-function tickWeek(){$('resetIn').textContent=resetText();$('weekLabel').textContent=`Week of ${weekLabel(weekKey())} · resets Monday at midnight Pacific.`}
+function resetText(){const n=laNow(),st=seasonStart(n),end=st===S1?S2:st+SLEN;let mins=Math.round((end-Date.UTC(n.y,n.m-1,n.d))/DAY)*1440-n.h*60-n.min;
+  const d=Math.floor(mins/1440),h=Math.floor(mins%1440/60),m=mins%60;return 'Resets in '+(d?`${d}d ${h}h`:h?`${h}h ${m}m`:`${m}m`)}
+function tickWeek(){$('resetIn').textContent=resetText();$('weekLabel').textContent=`Season of ${weekLabel(weekKey())} · resets every other Monday at midnight Pacific.`}
 tickWeek();setInterval(()=>{tickWeek();renderBoard()},60000);
 
 // ---------- Leaderboard (shared db)
@@ -769,17 +773,17 @@ function renderBoard(){
   if(STANDALONE){const msg=t=>`<li class="empty" style="display:block;background:none">${t}</li>`;
     if(api.state==='loading')lb.innerHTML=msg('Loading the leaderboard… if nobody has played in a while this can take up to a minute.');
     else if(api.state==='error'&&!api.top.length)lb.innerHTML=msg('Couldn’t reach the leaderboard. You can still play; it will retry on its own.');
-    else lb.innerHTML=api.top.length?api.top.map((p,i)=>`<li class="${p.mine?'me':''}"><span class="rk">${i+1}</span><span class="nm">${esc(p.name||'Player')}</span><span class="lv">L${p.level||1}${p.bosses?` · ${p.bosses}B`:''}</span><span class="sc">${(+p.score).toLocaleString()}</span></li>`).join(''):msg('No scores yet this week. Play a round and claim the top spot.');
-    $('hof').innerHTML=api.hof.length?api.hof.map(h=>`<li><span>Week of ${weekLabel(h.week)}</span><span><b>${esc(h.name)}</b> · ${(+h.score).toLocaleString()}</span></li>`).join(''):'<li><span>No finished weeks yet.</span></li>';return}
+    else lb.innerHTML=api.top.length?api.top.map((p,i)=>`<li class="${p.mine?'me':''}"><span class="rk">${i+1}</span><span class="nm">${esc(p.name||'Player')}</span><span class="lv">L${p.level||1}${p.bosses?` · ${p.bosses}B`:''}</span><span class="sc">${(+p.score).toLocaleString()}</span></li>`).join(''):msg('No scores yet this season. Play a round and claim the top spot.');
+    $('hof').innerHTML=api.hof.length?api.hof.map(h=>`<li><span>Season of ${weekLabel(h.week)}</span><span><b>${esc(h.name)}</b> · ${(+h.score).toLocaleString()}</span></li>`).join(''):'<li><span>No finished seasons yet.</span></li>';return}
   if(!db){lb.innerHTML='<li class="empty" style="display:block;background:none">The shared board loads when you open this page signed in to Claude. You can still play.</li>';return}
   const rows=players.filter(p=>p.week===wk&&typeof p.score==='number').sort((a,b)=>b.score-a.score).slice(0,10);
-  if(!rows.length)lb.innerHTML='<li class="empty" style="display:block;background:none">No scores yet this week. Play a round and claim the top spot.</li>';
+  if(!rows.length)lb.innerHTML='<li class="empty" style="display:block;background:none">No scores yet this season. Play a round and claim the top spot.</li>';
   else lb.innerHTML=rows.map((p,i)=>`<li class="${p.id===uid?'me':''}"><span class="rk">${i+1}</span><span class="nm">${esc(p.name||'Player')}</span><span class="lv">L${p.level||1}${p.bosses?` · ${p.bosses}B`:''}</span><span class="sc">${p.score.toLocaleString()}</span></li>`).join('');
   // hall of fame from history
   const best={};
   players.forEach(p=>{const h=p.history||{};for(const k in h){if(k>=wk)continue;if(!best[k]||h[k]>best[k].s)best[k]={s:h[k],n:p.name||'Player'}}});
   const weeks=Object.keys(best).sort().reverse().slice(0,5);
-  $('hof').innerHTML=weeks.length?weeks.map(k=>`<li><span>Week of ${weekLabel(k)}</span><span><b>${esc(best[k].n)}</b> · ${best[k].s.toLocaleString()}</span></li>`).join(''):'<li><span>No finished weeks yet.</span></li>';
+  $('hof').innerHTML=weeks.length?weeks.map(k=>`<li><span>Season of ${weekLabel(k)}</span><span><b>${esc(best[k].n)}</b> · ${best[k].s.toLocaleString()}</span></li>`).join(''):'<li><span>No finished seasons yet.</span></li>';
 }
 (async()=>{
   try{
@@ -809,10 +813,10 @@ function gameOver(){
   const note=$('postNote');note.className='note';note.textContent='';
   const can=STANDALONE||(db&&uid&&canPost);
   $('postBtn').hidden=!can;$('name').hidden=!can;document.querySelector('label[for=name]').hidden=!can;
-  if(STANDALONE){if(prev>=score&&prev>0)note.textContent=`Your best this week is ${prev.toLocaleString()}. Only higher scores replace it.`}
+  if(STANDALONE){if(prev>=score&&prev>0)note.textContent=`Your best this season is ${prev.toLocaleString()}. Only higher scores replace it.`}
   else if(!db)note.textContent='Open this page signed in to Claude to post scores.';
   else if(!uid||!canPost)note.textContent='You can view the board but not post. Ask the owner for Contributor access.';
-  else if(prev>=score)note.textContent=`Your best this week is ${prev.toLocaleString()}. Only higher scores replace it.`;
+  else if(prev>=score)note.textContent=`Your best this season is ${prev.toLocaleString()}. Only higher scores replace it.`;
   showOv('ovOver');
 }
 $('postBtn').onclick=async()=>{
@@ -823,7 +827,7 @@ $('postBtn').onclick=async()=>{
   if(STANDALONE){$('postBtn').disabled=true;note.className='note';note.textContent='Posting… (the first post after a quiet spell can take up to a minute)';
     try{const r=await fetch(`${API}/api/score`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pid:pid(),name,score:lastRun.score,level:lastRun.level,bosses:lastRun.bosses||0})});
       const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||'post');lastRun.posted=true;note.className='note ok';
-      note.textContent=d.improved?`Posted! You're #${d.rank} this week.`:`Name updated. Your best this week is still ${(+d.best).toLocaleString()}.`;await loadApiBoard()}
+      note.textContent=d.improved?`Posted! You're #${d.rank} this season.`:`Name updated. Your best this season is still ${(+d.best).toLocaleString()}.`;await loadApiBoard()}
     catch(e){note.className='note err';note.textContent=e.message&&e.message!=='post'&&e.message!=='Failed to fetch'?e.message:'Couldn’t reach the leaderboard. Check your connection and tap Post score again.'}
     finally{$('postBtn').disabled=false}return}
   const wk=weekKey(),cur=myDoc&&myDoc.week===wk?myDoc:null;
@@ -834,7 +838,7 @@ $('postBtn').onclick=async()=>{
   const body={name,week:wk,score:better?lastRun.score:cur.score,level:better?lastRun.level:(cur.level||1),bosses:better?lastRun.bosses:(cur.bosses||0),at:Date.now(),history:h2};
   $('postBtn').disabled=true;note.className='note';note.textContent='Posting…';
   try{await db.collection('players').doc(uid).set(body);lastRun.posted=true;
-    note.className='note ok';note.textContent=better?'Posted to this week\'s board.':'Name updated. Your earlier score this week is higher.';}
+    note.className='note ok';note.textContent=better?'Posted to this season\'s board.':'Name updated. Your earlier score this season is higher.';}
   catch(e){note.className='note err';note.textContent=e&&e.code==='not_granted'?'Allow data access for this page to post your score.':'Your score could not be posted. Ask the owner for Contributor access, then try again.'}
   finally{$('postBtn').disabled=false}
 };

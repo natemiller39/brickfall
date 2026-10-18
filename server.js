@@ -1,5 +1,5 @@
 // Brickfall score server: a shared weekly leaderboard for the website.
-// Needs DATABASE_URL (a Postgres connection string). Weeks reset Monday 00:00 Pacific.
+// Needs DATABASE_URL (a Postgres connection string). Two-week seasons reset Monday 00:00 Pacific.
 const http = require('http');
 const { Pool } = require('pg');
 
@@ -13,7 +13,11 @@ function weekKey(d = new Date()) {
   new Intl.DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles', year: 'numeric', month: 'numeric', day: 'numeric', weekday: 'short' })
     .formatToParts(d).forEach(x => (p[x.type] = x.value));
   const wd = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].indexOf(p.weekday);
-  return new Date(Date.UTC(+p.year, +p.month - 1, +p.day - wd)).toISOString().slice(0, 10);
+  // Seasons: first runs Oct 12 - Nov 2 2026, then every 14 days (resets Monday 00:00 Pacific).
+  const DAY = 86400000, S1 = Date.UTC(2026, 9, 12), S2 = Date.UTC(2026, 10, 2), SLEN = 14 * DAY;
+  const mon = Date.UTC(+p.year, +p.month - 1, +p.day - wd);
+  const start = mon < S2 ? S1 : S2 + SLEN * Math.floor((mon - S2) / SLEN);
+  return new Date(start).toISOString().slice(0, 10);
 }
 
 let ready = null;
