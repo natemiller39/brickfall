@@ -1,0 +1,8 @@
+{
+  "name": "brickfall",
+  "private": true,
+  "description": "Brickfall game site and shared leaderboard server",
+  "scripts": { "start": "node server.js" },
+  "engines": { "node": ">=18" },
+  "dependencies": { "pg": "8.11.3" }
+}

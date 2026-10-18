@@ -752,19 +752,25 @@ tickWeek();setInterval(()=>{tickWeek();renderBoard()},60000);
 
 // ---------- Leaderboard (shared db)
 let db=null,uid=null,players=[],myDoc=null,canPost=false;
-// Website mode (no Claude runtime): scores and saves live on this device.
+// Website mode (no Claude runtime): the shared board comes from the Brickfall score server.
 const STANDALONE=!window.claude;
-function localRuns(){try{return JSON.parse(localStorage.getItem('bf_runs')||'[]')}catch(e){return []}}
-if(STANDALONE){document.querySelector('.bhead h3').textContent='Your top 10';$('resetIn').textContent='';
-  $('weekLabel').textContent='Best runs played on this device. Your game saves here too.';$('postBtn').textContent='Save score'}
+const API='https://brickfall-api.onrender.com';
+let api={state:'loading',top:[],hof:[],mine:null};
+function pid(){let p=null;try{p=localStorage.getItem('bf_pid')}catch(e){}
+  if(!p){p=Array.from(crypto.getRandomValues(new Uint8Array(12)),b=>b.toString(36).padStart(2,'0')).join('').slice(0,20);try{localStorage.setItem('bf_pid',p)}catch(e){}}return p}
+async function loadApiBoard(){try{const r=await fetch(`${API}/api/board?pid=${encodeURIComponent(pid())}`,{cache:'no-store'});if(!r.ok)throw 0;const d=await r.json();
+    api={state:'ok',top:d.top||[],hof:d.hof||[],mine:d.mine||null}}catch(e){if(api.state!=='ok')api.state='error'}renderBoard()}
+if(STANDALONE){setTimeout(loadApiBoard,0);setInterval(()=>{if(!document.hidden)loadApiBoard()},45000)}
 try{$('name').value=localStorage.getItem('bf_name')||''}catch(e){}
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
 function renderBoard(){
   const wk=weekKey(),lb=$('lb');
-  if(STANDALONE){const rows=localRuns().sort((a,b)=>b.score-a.score).slice(0,10);
-    lb.innerHTML=rows.length?rows.map((p,i)=>`<li><span class="rk">${i+1}</span><span class="nm">${esc(p.name||'Player')}</span><span class="lv">L${p.level||1}${p.bosses?` · ${p.bosses}B`:''}</span><span class="sc">${p.score.toLocaleString()}</span></li>`).join(''):'<li class="empty" style="display:block;background:none">No scores yet. Play a round and save your score.</li>';
-    $('hof').closest('.hof').hidden=true;return}
+  if(STANDALONE){const msg=t=>`<li class="empty" style="display:block;background:none">${t}</li>`;
+    if(api.state==='loading')lb.innerHTML=msg('Loading the leaderboard… if nobody has played in a while this can take up to a minute.');
+    else if(api.state==='error'&&!api.top.length)lb.innerHTML=msg('Couldn’t reach the leaderboard. You can still play; it will retry on its own.');
+    else lb.innerHTML=api.top.length?api.top.map((p,i)=>`<li class="${p.mine?'me':''}"><span class="rk">${i+1}</span><span class="nm">${esc(p.name||'Player')}</span><span class="lv">L${p.level||1}${p.bosses?` · ${p.bosses}B`:''}</span><span class="sc">${(+p.score).toLocaleString()}</span></li>`).join(''):msg('No scores yet this week. Play a round and claim the top spot.');
+    $('hof').innerHTML=api.hof.length?api.hof.map(h=>`<li><span>Week of ${weekLabel(h.week)}</span><span><b>${esc(h.name)}</b> · ${(+h.score).toLocaleString()}</span></li>`).join(''):'<li><span>No finished weeks yet.</span></li>';return}
   if(!db){lb.innerHTML='<li class="empty" style="display:block;background:none">The shared board loads when you open this page signed in to Claude. You can still play.</li>';return}
   const rows=players.filter(p=>p.week===wk&&typeof p.score==='number').sort((a,b)=>b.score-a.score).slice(0,10);
   if(!rows.length)lb.innerHTML='<li class="empty" style="display:block;background:none">No scores yet this week. Play a round and claim the top spot.</li>';
@@ -798,12 +804,12 @@ function gameOver(){
   $('overScore').textContent=score.toLocaleString();
   const beaten=BOSSES.slice(0,Math.min(bossesBeaten,BOSSES.length)).map(b=>b.name).join(', ');
   $('overSub').textContent=`Reached level ${levelNumber()} · ${bossesBeaten?`${bossesBeaten} boss${bossesBeaten>1?'es':''} beaten (${beaten}${bossesBeaten>BOSSES.length?'…':''})`:'no bosses beaten yet'} · best combo x${Math.min(1+Math.floor(bestCombo/3),8)}`;
-  const wk=weekKey(),prev=myDoc&&myDoc.week===wk?myDoc.score:0;
+  const wk=weekKey(),prev=STANDALONE?(api.mine?+api.mine.score:0):(myDoc&&myDoc.week===wk?myDoc.score:0);
   $('overTitle').textContent=score>prev&&prev>0?'New personal best':'Game over';
   const note=$('postNote');note.className='note';note.textContent='';
   const can=STANDALONE||(db&&uid&&canPost);
   $('postBtn').hidden=!can;$('name').hidden=!can;document.querySelector('label[for=name]').hidden=!can;
-  if(STANDALONE){}
+  if(STANDALONE){if(prev>=score&&prev>0)note.textContent=`Your best this week is ${prev.toLocaleString()}. Only higher scores replace it.`}
   else if(!db)note.textContent='Open this page signed in to Claude to post scores.';
   else if(!uid||!canPost)note.textContent='You can view the board but not post. Ask the owner for Contributor access.';
   else if(prev>=score)note.textContent=`Your best this week is ${prev.toLocaleString()}. Only higher scores replace it.`;
@@ -814,9 +820,12 @@ $('postBtn').onclick=async()=>{
   if(!name){note.className='note err';note.textContent='Enter a name first.';$('name').focus();return}
   if(!lastRun||lastRun.posted){note.className='note';note.textContent='This run is already posted.';return}
   try{localStorage.setItem('bf_name',name)}catch(e){}
-  if(STANDALONE){const runs=localRuns();runs.push({name,score:lastRun.score,level:lastRun.level,bosses:lastRun.bosses,at:Date.now()});
-    runs.sort((a,b)=>b.score-a.score);try{localStorage.setItem('bf_runs',JSON.stringify(runs.slice(0,25)))}catch(e){}
-    lastRun.posted=true;note.className='note ok';note.textContent='Saved to your top 10.';renderBoard();return}
+  if(STANDALONE){$('postBtn').disabled=true;note.className='note';note.textContent='Posting… (the first post after a quiet spell can take up to a minute)';
+    try{const r=await fetch(`${API}/api/score`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pid:pid(),name,score:lastRun.score,level:lastRun.level,bosses:lastRun.bosses||0})});
+      const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.error||'post');lastRun.posted=true;note.className='note ok';
+      note.textContent=d.improved?`Posted! You're #${d.rank} this week.`:`Name updated. Your best this week is still ${(+d.best).toLocaleString()}.`;await loadApiBoard()}
+    catch(e){note.className='note err';note.textContent=e.message&&e.message!=='post'&&e.message!=='Failed to fetch'?e.message:'Couldn’t reach the leaderboard. Check your connection and tap Post score again.'}
+    finally{$('postBtn').disabled=false}return}
   const wk=weekKey(),cur=myDoc&&myDoc.week===wk?myDoc:null;
   const better=!cur||lastRun.score>cur.score;
   const history=Object.assign({},myDoc&&myDoc.history||{});
