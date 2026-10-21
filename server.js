@@ -91,8 +91,9 @@ http.createServer((req, res) => {
     res.writeHead(204, h); return res.end();
   }
   if (url.pathname === '/health') return send(res, 200, { ok: true, db: !!pool }, origin);
-  if (req.method === 'GET' && url.pathname === '/api/board') {
-    return board(String(url.searchParams.get('pid') || ''), gameOf(String(url.searchParams.get('game') || ''))).then(d => send(res, 200, d, origin))
+  const bm = /^\/api\/board(?:\/([a-z]+))?\/?$/.exec(url.pathname);
+  if (req.method === 'GET' && bm) {
+    return board(String(url.searchParams.get('pid') || ''), gameOf(bm[1] || String(url.searchParams.get('game') || ''))).then(d => send(res, 200, d, origin))
       .catch(e => { console.error(e); send(res, 503, { error: 'Leaderboard is unavailable.' }, origin); });
   }
   if (req.method === 'POST' && url.pathname === '/api/score') {
