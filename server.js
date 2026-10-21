@@ -1,4 +1,4 @@
-// Brickfall score server: a shared weekly leaderboard for the website.
+// Brickfall score server: shared season leaderboards for Brickfall and Jackpot Run.
 // Needs DATABASE_URL (a Postgres connection string). Two-week seasons reset Monday 00:00 Pacific.
 const http = require('http');
 const { Pool } = require('pg');
@@ -27,7 +27,10 @@ function init() {
       pid TEXT NOT NULL, week DATE NOT NULL, name TEXT NOT NULL,
       score INTEGER NOT NULL, level INTEGER NOT NULL DEFAULT 1, bosses INTEGER NOT NULL DEFAULT 0,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now(), PRIMARY KEY (pid, week));
-    CREATE INDEX IF NOT EXISTS scores_week_score ON scores (week, score DESC);`).catch(e => { ready = null; throw e; });
+    CREATE INDEX IF NOT EXISTS scores_week_score ON scores (week, score DESC);
+    ALTER TABLE scores ADD COLUMN IF NOT EXISTS game TEXT NOT NULL DEFAULT 'brickfall';
+    ALTER TABLE scores DROP CONSTRAINT IF EXISTS scores_pkey;
+    CREATE UNIQUE INDEX IF NOT EXISTS scores_pid_week_game ON scores (pid, week, game);`).catch(e => { ready = null; throw e; });
   return ready;
 }
 
@@ -46,17 +49,20 @@ function send(res, code, body, origin) {
   res.writeHead(code, h); res.end(JSON.stringify(body));
 }
 
-async function board(pid) {
+const GAMES = ['brickfall', 'jackpot'];
+const gameOf = g => (GAMES.includes(g) ? g : 'brickfall');
+
+async function board(pid, game) {
   await init();
   const wk = weekKey();
-  const top = (await pool.query('SELECT pid,name,score,level,bosses FROM scores WHERE week=$1 ORDER BY score DESC, updated_at ASC LIMIT 10', [wk])).rows;
-  const hof = (await pool.query(`SELECT DISTINCT ON (week) to_char(week,'YYYY-MM-DD') AS week,name,score FROM scores WHERE week<$1 ORDER BY week DESC, score DESC LIMIT 5`, [wk])).rows;
-  const mine = pid ? (await pool.query('SELECT name,score,level,bosses FROM scores WHERE pid=$1 AND week=$2', [pid, wk])).rows[0] || null : null;
+  const top = (await pool.query('SELECT pid,name,score,level,bosses FROM scores WHERE week=$1 AND game=$2 ORDER BY score DESC, updated_at ASC LIMIT 10', [wk, game])).rows;
+  const hof = (await pool.query(`SELECT DISTINCT ON (week) to_char(week,'YYYY-MM-DD') AS week,name,score FROM scores WHERE week<$1 AND game=$2 ORDER BY week DESC, score DESC LIMIT 5`, [wk, game])).rows;
+  const mine = pid ? (await pool.query('SELECT name,score,level,bosses FROM scores WHERE pid=$1 AND week=$2 AND game=$3', [pid, wk, game])).rows[0] || null : null;
   return { week: wk, top: top.map(({ pid: p, ...r }) => ({ ...r, mine: p === pid })), hof, mine };
 }
 
 async function post(body) {
-  const pid = String(body.pid || '');
+  const pid = String(body.pid || ''), game = gameOf(String(body.game || ''));
   const name = String(body.name || '').replace(/[\u0000-\u001f\u007f<>]/g, '').trim().slice(0, 14);
   const score = Math.floor(Number(body.score)), level = Math.floor(Number(body.level) || 1), bosses = Math.floor(Number(body.bosses) || 0);
   if (!/^[a-z0-9]{12,40}$/i.test(pid)) return [400, { error: 'Missing player id. Reload the page and try again.' }];
@@ -65,15 +71,15 @@ async function post(body) {
   if (level < 1 || level > 999 || bosses < 0 || bosses > 333) return [400, { error: 'That run looks wrong.' }];
   await init();
   const wk = weekKey();
-  const before = (await pool.query('SELECT score FROM scores WHERE pid=$1 AND week=$2', [pid, wk])).rows[0];
+  const before = (await pool.query('SELECT score FROM scores WHERE pid=$1 AND week=$2 AND game=$3', [pid, wk, game])).rows[0];
   const improved = !before || score > before.score;
-  const row = (await pool.query(`INSERT INTO scores (pid,week,name,score,level,bosses) VALUES ($1,$2,$3,$4,$5,$6)
-    ON CONFLICT (pid,week) DO UPDATE SET name=EXCLUDED.name,
+  const row = (await pool.query(`INSERT INTO scores (pid,week,name,score,level,bosses,game) VALUES ($1,$2,$3,$4,$5,$6,$7)
+    ON CONFLICT (pid,week,game) DO UPDATE SET name=EXCLUDED.name,
       level=CASE WHEN EXCLUDED.score>scores.score THEN EXCLUDED.level ELSE scores.level END,
       bosses=CASE WHEN EXCLUDED.score>scores.score THEN EXCLUDED.bosses ELSE scores.bosses END,
       score=GREATEST(scores.score,EXCLUDED.score), updated_at=now()
-    RETURNING score`, [pid, wk, name, score, level, bosses])).rows[0];
-  const rank = +(await pool.query('SELECT COUNT(*)+1 AS r FROM scores WHERE week=$1 AND score>$2', [wk, row.score])).rows[0].r;
+    RETURNING score`, [pid, wk, name, score, level, bosses, game])).rows[0];
+  const rank = +(await pool.query('SELECT COUNT(*)+1 AS r FROM scores WHERE week=$1 AND game=$3 AND score>$2', [wk, row.score, game])).rows[0].r;
   return [200, { ok: true, improved, best: row.score, rank }];
 }
 
@@ -86,7 +92,7 @@ http.createServer((req, res) => {
   }
   if (url.pathname === '/health') return send(res, 200, { ok: true, db: !!pool }, origin);
   if (req.method === 'GET' && url.pathname === '/api/board') {
-    return board(String(url.searchParams.get('pid') || '')).then(d => send(res, 200, d, origin))
+    return board(String(url.searchParams.get('pid') || ''), gameOf(String(url.searchParams.get('game') || ''))).then(d => send(res, 200, d, origin))
       .catch(e => { console.error(e); send(res, 503, { error: 'Leaderboard is unavailable.' }, origin); });
   }
   if (req.method === 'POST' && url.pathname === '/api/score') {
