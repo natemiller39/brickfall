@@ -161,7 +161,7 @@ li:nth-child(1) .rk{color:var(--amber)} li:nth-child(2) .rk{color:#d8dcf5} li:nt
       <div><span class="pill" style="background:var(--teal)">2</span>Flutter · 50/hit</div>
       <div><span class="pill" style="background:var(--violet)">3</span>Batwing · 100/hit</div>
       <div><span class="pill" style="background:var(--amber)">2</span>Gold Moth · 150/hit</div>
-      <div style="grid-column:1/-1;font-size:12px"><b style="color:#ffd23f">★ Jackpot block</b> on every level: it never breaks and pays 100, 200, 300… per hit (with no limit), but it vanishes when you lose a ball. Clear the colored bricks to move on, so decide how long to farm it. <b style="color:#ffd23f">High Roller</b> has two jackpot blocks that share one streak. <b style="color:#ff5a1f">Molten Mint</b> spills lava when you break dark bricks. <b style="color:#ffd23f">Level 6</b> is the Jackpot Dragon, built entirely from jackpot squares: every hit pays the next jackpot, the streak resets if you lose a ball, and it fires heat-seeking missiles. Beat it to win the run and earn a victory bonus for every life left. Speed bonuses still apply.</div>
+      <div style="grid-column:1/-1;font-size:12px"><b style="color:#ffd23f">★ Jackpot block</b> on every level: it never breaks and pays 100, 200, 300… per hit (with no limit), but it vanishes when you lose a ball. Clear the colored bricks to move on, so decide how long to farm it. <b style="color:#ffd23f">High Roller</b> has two jackpot blocks that share one streak. <b style="color:#ff5a1f">Molten Mint</b> spills lava when you break dark bricks. <b style="color:#ffd23f">Level 6</b> is the Jackpot Dragon. Its outer shell is unbreakable jackpot squares; losing a life makes the whole shell crumble and resets the streak. Inside is a core of breakable jackpot squares: destroy them all to win. Every hit on shell or core pays the next jackpot, and the dragon fires heat-seeking missiles. Beat it to win the run and earn a victory bonus for every life left. Speed bonuses still apply.</div>
       <div style="grid-column:1/-1;font-size:12px">You score for every point of damage you deal, plus a knockout bonus. Bigger creatures gain a hit every 6 levels; Buzzers and Fireflies always go down in one and points grow with your combo.</div>
     </div>
     <a class="xlink" href="https://brickfall.onrender.com/">Back to <b>Brickfall</b>, the endless original →</a>
@@ -263,6 +263,11 @@ function loadLevel(){
       const hp=def.hp[ch]+(def.hp[ch]>=2&&ch!=='e'?Math.min(n-1,3):0);
       const b={rx:rx*DW,ry:ry*DH,x:0,y:0,w:DW-2,h:DH-2,hp,maxHp:hp,steel:false,power:false,flash:0,boss:ch};
       bricks.push(b);boss.total+=hp;if(ch==='e')boss.weak.push(b)}));
+    // Jackpot Dragon: every square touching the outside is an unbreakable jackpot shell; the inside is a breakable jackpot core.
+    const cell=new Set(bricks.filter(b=>b.boss).map(b=>(b.rx/DW)+','+(b.ry/DH)));
+    bricks.forEach(b=>{if(!b.boss)return;const x=b.rx/DW,y=b.ry/DH;
+      if([[1,0],[-1,0],[0,1],[0,-1]].some(([dx,dy])=>!cell.has((x+dx)+','+(y+dy)))){b.kind='jshell';b.steel=true;b.hp=b.maxHp=1}});
+    boss.weak=boss.weak.filter(b=>b.kind!=='jshell');boss.total=bricks.filter(b=>b.boss&&!b.steel).reduce((t,b)=>t+b.hp,0);
     placeBoss()}
   // Objectives rotate: level 2 bomb, 3 jackpot, 4 none, 5 bomb, 6 jackpot...
   obj=null;const lv=levelNumber(),cand=bricks.filter(b=>!b.steel);
@@ -282,7 +287,7 @@ function loadLevel(){
   // Jackpot Run: every level has one jackpot block (the final vault sits under the dragon).
   {const jb=bricks.find(b=>b.kind==='jackpot');if(jb)obj={type:'jackpot',brick:jb,hits:0,done:false};if(bossLevel)obj={type:'jdragon',hits:0,done:false}}
   lvTime=0;{let hpSum=0;bricks.forEach(b=>{if(!b.steel)hpSum+=b.hp});par=Math.round((bossLevel?60:40)+hpSum*(bossLevel?1.3:1.6))}
-  if(bossLevel){boss.label='Jackpot Dragon';banner={t:2.8,text:'Jackpot Dragon',sub:'Made of jackpots! Every hit pays more. Dodge the heat-seeking missiles.'}}
+  if(bossLevel){boss.label='Jackpot Dragon';banner={t:2.8,text:'Jackpot Dragon',sub:'Its gold shell never breaks. Lose a life and it crumbles, exposing the core.'}}
   else banner={t:1.9,text:`Level ${levelNumber()} of 6`,sub:L.n+(loop?` · Loop ${loop+1}`:'')+(L.lava?' · Lava behind the wall! Dodge the spills.':'')+(obj?(obj.type==='timer'?` · Defuse ${obj.bombs.length} bombs!`:' · Jackpot block!'):'')};
   resetBall();
 }
@@ -392,6 +397,8 @@ function addScore(p,x,y){if(timers.double>0)p*=2;score+=p;if(x!=null)floaters.pu
 const mult=()=>Math.min(1+Math.floor(combo/3),8);
 
 function hitBrick(b,fromLaser){
+  if(b.kind==='jshell'){b.flash=.15;if(fromLaser){beep(180,.04,'triangle',.04);return}const nowT=performance.now();if(nowT-(b.lastHit||0)<220)return;b.lastHit=nowT;
+    combo++;bestCombo=Math.max(bestCombo,combo);jdPay(b);beep(760+Math.min(obj.hits,12)*50,.07,'sine',.06);return}
   if(b.kind==='jackpot'){b.flash=.15;if(fromLaser){beep(180,.04,'triangle',.04);return}
     const nowT=performance.now();if(nowT-(b.lastHit||0)<220){beep(500,.03,'triangle',.03);return}b.lastHit=nowT;
     obj.hits++;combo++;bestCombo=Math.max(bestCombo,combo);const p=100*obj.hits;addScore(p,b.x+b.w/2,b.y-4);
@@ -472,7 +479,7 @@ const JDRAGON={...BOSSES[0],name:'Jackpot Dragon',shot:'missile',bar:'#ffd23f',
 function jdPay(b){if(!(b.boss&&obj&&obj.type==='jdragon'))return false;obj.hits++;const p=100*obj.hits;addScore(p,b.x+b.w/2,b.y-4);
   burst(b.x+b.w/2,b.y+b.h/2,'#ffd23f',6);return true}
 function placeBoss(){for(const b of bricks)if(b.boss){b.x=boss.ox+b.rx;b.y=boss.oy+b.ry}}
-function bossHp(){let h=0;for(const b of bricks)if(b.boss&&!b.dead)h+=Math.max(0,b.hp);return h}
+function bossHp(){let h=0;for(const b of bricks)if(b.boss&&!b.dead&&!b.steel)h+=Math.max(0,b.hp);return h}
 function drawDragon(c){
   const flap=Math.sin(c.t*7),R=c.r,hot=c.flash>0;
   ctx.save();ctx.translate(c.x,c.y);ctx.scale(c.dir,1);
@@ -613,7 +620,9 @@ function update(dt){
   }
   balls=balls.filter(b=>!b.lost);
   if(!balls.length){
-    if(obj&&obj.type==='jdragon'&&obj.hits>0){obj.hits=0;floaters.push({x:W/2,y:H*.45,t:1.3,text:'JACKPOT STREAK RESET'})}
+    if(obj&&obj.type==='jdragon'){const sh=bricks.filter(b=>b.kind==='jshell'&&!b.dead);
+      if(sh.length){sh.forEach((b,i)=>{b.dead=true;if(i%3===0)burst(b.x+b.w/2,b.y+b.h/2,'#ffd23f',8)});floaters.push({x:W/2,y:H*.4,t:1.6,text:'THE SHELL CRUMBLES! HIT THE CORE'})}
+      if(obj.hits>0){obj.hits=0;floaters.push({x:W/2,y:H*.45,t:1.3,text:'JACKPOT STREAK RESET'})}}
     if(obj&&obj.type==='jackpot'&&!obj.done){obj.done=true;bricks.filter(b=>b.kind==='jackpot'&&!b.dead).forEach(b=>{b.dead=true;burst(b.x+b.w/2,b.y+b.h/2,'#ffd23f',20)});const b=obj.brick;floaters.push({x:W/2,y:b.y+30,t:1.3,text:'JACKPOT GONE'})}
     flames=[];spills=[];stun=0;padHp=3;
     lives--;shake=6;beep(110,.35,'sawtooth',.06);timers=freshTimers();drops=[];shots=[];
@@ -660,7 +669,9 @@ function draw(){
   }
   // bricks
   for(const b of bricks){if(b.dead)continue;
-    if(b.boss&&obj&&obj.type==='jdragon'){ctx.fillStyle=b.flash>0?'#fff':boss.def.col[b.boss];rr(b.x,b.y,b.w,b.h,2);ctx.fill();if(b.hp<b.maxHp){ctx.fillStyle='#0b0d1c55';ctx.fill()}
+    if(b.boss&&obj&&obj.type==='jdragon'&&b.kind==='jshell'){const gg=ctx.createLinearGradient(b.x,b.y,b.x,b.y+b.h);gg.addColorStop(0,'#fff3a0');gg.addColorStop(1,'#c98a12');
+      ctx.fillStyle=b.flash>0?'#fff':gg;rr(b.x,b.y,b.w,b.h,2);ctx.fill();ctx.strokeStyle='#7a4f00';ctx.lineWidth=1;ctx.stroke();continue}
+    if(b.boss&&obj&&obj.type==='jdragon'){ctx.save();ctx.shadowColor='#ffd23f';ctx.shadowBlur=6+3*Math.sin(performance.now()/180);ctx.fillStyle=b.flash>0?'#fff':(b.boss==='e'?'#ff4d6d':'#ffe066');rr(b.x,b.y,b.w,b.h,2);ctx.fill();ctx.restore();if(b.hp<b.maxHp){ctx.fillStyle='#0b0d1c55';rr(b.x,b.y,b.w,b.h,2);ctx.fill()}
       ctx.fillStyle='#ffffff88';ctx.fillRect(b.x+2,b.y+1,b.w-4,1.5);if(((b.rx+b.ry)/16+Math.floor(performance.now()/400))%7===0){ctx.fillStyle='#fff';ctx.fillRect(b.x+b.w/2-1,b.y+b.h/2-1,2,2)}
       if(b.boss==='e'){ctx.fillStyle=C.ink;ctx.fillRect(b.x+b.w/2-1,b.y+1,2,b.h-2)}continue}
     if(b.boss){ctx.fillStyle=b.flash>0?'#fff':(boss?boss.def.col[b.boss]:'#888');rr(b.x,b.y,b.w,b.h,2);ctx.fill();if(b.hp<b.maxHp){ctx.fillStyle='#0b0d1c66';ctx.fill()}
