@@ -58,7 +58,7 @@ async function board(pid, game) {
   const top = (await pool.query('SELECT pid,name,score,level,bosses FROM scores WHERE week=$1 AND game=$2 ORDER BY score DESC, updated_at ASC LIMIT 10', [wk, game])).rows;
   const hof = (await pool.query(`SELECT DISTINCT ON (week) to_char(week,'YYYY-MM-DD') AS week,name,score FROM scores WHERE week<$1 AND game=$2 ORDER BY week DESC, score DESC LIMIT 5`, [wk, game])).rows;
   const mine = pid ? (await pool.query('SELECT name,score,level,bosses FROM scores WHERE pid=$1 AND week=$2 AND game=$3', [pid, wk, game])).rows[0] || null : null;
-  return { week: wk, top: top.map(({ pid: p, ...r }) => ({ ...r, mine: p === pid })), hof, mine };
+  return { game, week: wk, top: top.map(({ pid: p, ...r }) => ({ ...r, mine: p === pid })), hof, mine };
 }
 
 async function post(body) {
