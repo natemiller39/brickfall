@@ -154,6 +154,7 @@ li:nth-child(1) .rk{color:var(--amber)} li:nth-child(2) .rk{color:#d8dcf5} li:nt
       <div><span class="pill" style="background:#8fe3ff">X</span>Shield saves one ball</div>
       <div><span class="pill" style="background:#ffd23f">2</span>Double points</div>
       <div><span class="pill" style="background:#ff4d4d">B</span>Bombs blast bricks</div>
+      <div><span class="pill" style="background:#e8ecff">I</span>Straight shot: ball flies straight up</div>
     </div>
     <div class="legend">
       <div><span class="pill" style="background:#7dff6a">1</span>Buzzer · 50 + 150</div>
@@ -222,7 +223,7 @@ const CRITTERS=[
   {k:'moth',name:'Gold Moth',hp:2,pts:1200,hitPts:150,speed:118,col:'#ffb340',wing:'#d9861b',r:11,w:1}
 ];
 let pad={x:W/2,y:H-118,w:70,h:12,target:W/2};const DRAG_Y=H-92;
-function freshTimers(){bombs=0;return {wide:0,slow:0,laser:0,fire:0,catch:0,double:0,shield:0}}
+function freshTimers(){bombs=0;return {wide:0,slow:0,laser:0,fire:0,catch:0,double:0,shield:0,straight:0}}
 let bombs=0,obj=null;
 let timers=freshTimers(),laserCd=0,shake=0,banner=null,brokenThisLevel=0;
 
@@ -290,7 +291,7 @@ function loadLevel(){
   resetBall();
 }
 function resetBall(){balls=[{x:pad.x,y:pad.y-9,vx:0,vy:0,r:8,rot:0,stuck:true,speed:baseSpeed()}];combo=0}
-function launch(){balls.forEach(b=>{if(b.stuck){const a=b.off?Math.max(-.9,Math.min(.9,b.off/(pad.w/2)*.9)):(Math.random()*.5-.25);b.off=0;b.hold=0;b.vx=Math.sin(a)*b.speed;b.vy=-Math.cos(a)*b.speed;b.stuck=false}})}
+function launch(){balls.forEach(b=>{if(b.stuck){const a=timers.straight>0?0:b.off?Math.max(-.9,Math.min(.9,b.off/(pad.w/2)*.9)):(Math.random()*.5-.25);b.off=0;b.hold=0;b.vx=Math.sin(a)*b.speed;b.vy=-Math.cos(a)*b.speed;b.stuck=false}})}
 // ---------- iPhone play mode
 const TOUCH=matchMedia('(pointer:coarse)').matches;
 const gameEl=document.querySelector('.game');
@@ -419,8 +420,9 @@ function hitBrick(b,fromLaser){
   }else{addScore(10*m*(b.boss?3:1));beep(330,.05,'square',.04)}
 }
 function spawnDrop(x,y,guaranteed){
-  const pool=['W','W','M','M','S','L','L','F','C','X','2','B'];if(lives<5)pool.push('+');
-  if(guaranteed)pool.push('M','L');
+  // Extra-life odds stay as before (1 in 13, or 1 in 15 from guaranteed drops); Straight Shot joins the rest of the pool.
+  if(lives<5&&Math.random()<(guaranteed?1/15:1/13)){drops.push({x,y,k:'+'});return}
+  const pool=['W','W','M','M','S','L','L','F','C','X','2','B','I'];if(guaranteed)pool.push('M','L');
   drops.push({x,y,k:pool[Math.floor(Math.random()*pool.length)]});
 }
 function applyPower(k){
@@ -430,11 +432,12 @@ function applyPower(k){
   if(k==='L')timers.laser=9;
   if(k==='+'){lives=Math.min(lives+1,5)}
   if(k==='F')timers.fire=7;
+  if(k==='I')timers.straight=12;
   if(k==='C')timers.catch=12;
   if(k==='X')timers.shield=20;
   if(k==='2')timers.double=12;
   if(k==='B')bombs=Math.min(bombs+2,4);
-  const NAMES={W:'WIDE PADDLE',M:'MULTIBALL',S:'SLOW BALL',L:'LASERS','+':'EXTRA LIFE',F:'FIREBALL',C:'CATCH',X:'SHIELD','2':'DOUBLE POINTS',B:'BOMBS x2'};
+  const NAMES={I:'STRAIGHT SHOT',W:'WIDE PADDLE',M:'MULTIBALL',S:'SLOW BALL',L:'LASERS','+':'EXTRA LIFE',F:'FIREBALL',C:'CATCH',X:'SHIELD','2':'DOUBLE POINTS',B:'BOMBS x2'};
   floaters.push({x:pad.x,y:pad.y-24,t:1,text:NAMES[k]});
   if(k==='M'){
     const add=[];balls.filter(b=>!b.stuck).forEach(b=>{[-.45,.45].forEach(da=>{if(balls.length+add.length>=8)return;const a=Math.atan2(b.vx,-b.vy)+da;add.push({x:b.x,y:b.y,r:b.r,rot:0,speed:b.speed,vx:Math.sin(a)*b.speed,vy:-Math.cos(a)*b.speed})})});
@@ -583,7 +586,7 @@ function update(dt){
       if(timers.shield>0&&b.vy>0&&b.y+b.r>=DRAG_Y){b.y=DRAG_Y-b.r;b.vy=-Math.abs(b.vy);timers.shield=0;burst(b.x,DRAG_Y,'#5cc8ff',16);beep(500,.12,'sine',.06)}
       // paddle
       if(b.vy>0&&b.y+b.r>=pad.y&&b.y-b.r<=pad.y+pad.h&&Math.abs(b.x-pad.x)<=pad.w/2+b.r){
-        const t=Math.max(-1,Math.min(1,(b.x-pad.x)/(pad.w/2))),a=t*1.05,s=Math.hypot(b.vx,b.vy);
+        const t=Math.max(-1,Math.min(1,(b.x-pad.x)/(pad.w/2))),a=timers.straight>0?0:t*1.05,s=Math.hypot(b.vx,b.vy);
         b.vx=Math.sin(a)*s;b.vy=-Math.cos(a)*s;b.y=pad.y-b.r;combo=0;if(timers.catch>0){b.stuck=true;b.off=b.x-pad.x;b.hold=1.6}beep(160,.05,'square',.05);
       }
       // creatures
@@ -686,7 +689,7 @@ function draw(){
     const pw=5,tot=c.maxHp*(pw+2)-2;for(let i=0;i<c.maxHp;i++){ctx.fillStyle=i<c.hp?c.col:'#ffffff30';ctx.fillRect(c.x-tot/2+i*(pw+2),c.y-c.r-10,pw,3)}
   }
   // drops
-  const DC={W:C.teal,M:C.violet,S:C.amber,L:C.coral,'+':'#ffffff',F:'#ff7a2e',C:'#5cc8ff',X:'#8fe3ff',2:'#ffd23f',B:'#ff4d4d'};
+  const DC={I:'#e8ecff',W:C.teal,M:C.violet,S:C.amber,L:C.coral,'+':'#ffffff',F:'#ff7a2e',C:'#5cc8ff',X:'#8fe3ff',2:'#ffd23f',B:'#ff4d4d'};
   if(timers.shield>0){ctx.strokeStyle='#5cc8ff';ctx.globalAlpha=.5+.3*Math.sin(performance.now()/150);ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(4,DRAG_Y);ctx.lineTo(W-4,DRAG_Y);ctx.stroke();ctx.globalAlpha=1;ctx.lineWidth=1}
   ctx.font='700 11px "Chakra Petch", sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
   for(const d of drops){ctx.fillStyle=DC[d.k];rr(d.x-12,d.y-7,24,14,7);ctx.fill();ctx.fillStyle=C.ink;ctx.fillText(d.k,d.x,d.y+1)}
@@ -696,6 +699,7 @@ function draw(){
   ctx.fillStyle='#ffffff07';ctx.fillRect(0,DRAG_Y,W,H-DRAG_Y);ctx.strokeStyle='#ffffff14';ctx.setLineDash([4,6]);ctx.beginPath();ctx.moveTo(0,DRAG_Y+.5);ctx.lineTo(W,DRAG_Y+.5);ctx.stroke();ctx.setLineDash([]);
   if(state==='ready'||state==='title'){ctx.fillStyle='#ffffff55';ctx.font='600 11px "Chakra Petch", sans-serif';ctx.textAlign='center';ctx.fillText('◀  DRAG ANYWHERE TO MOVE  ▶',W/2,DRAG_Y+50)}
   // paddle
+  if(timers.straight>0){ctx.save();ctx.strokeStyle='#e8ecff55';ctx.lineWidth=2;ctx.setLineDash([3,7]);ctx.lineDashOffset=-performance.now()/30;ctx.beginPath();ctx.moveTo(pad.x,pad.y-4);ctx.lineTo(pad.x,40);ctx.stroke();ctx.restore()}
   const g=ctx.createLinearGradient(0,pad.y,0,pad.y+pad.h);g.addColorStop(0,timers.laser>0?C.coral:C.teal);g.addColorStop(1,'#16806e');
   ctx.save();ctx.shadowColor=timers.laser>0?C.coral:C.teal;ctx.shadowBlur=16;ctx.fillStyle=g;rr(pad.x-pad.w/2,pad.y,pad.w,pad.h,6);ctx.fill();ctx.restore();
   ctx.strokeStyle='#ffffffcc';ctx.lineWidth=1.5;rr(pad.x-pad.w/2,pad.y,pad.w,pad.h,6);ctx.stroke();ctx.lineWidth=1;
@@ -711,7 +715,7 @@ function draw(){
   floaters.forEach(f=>{ctx.globalAlpha=Math.min(1,f.t*2);ctx.fillStyle=C.amber;ctx.fillText(f.text,f.x,f.y)});ctx.globalAlpha=1;
   // active power timers
   let tx=8,ty=H-10;ctx.textAlign='left';ctx.font='600 10px "Chakra Petch", sans-serif';
-  const act=[['wide','WIDE',C.teal],['slow','SLOW',C.amber],['laser','LASER',C.coral],['fire','FIRE','#ff7a2e'],['catch','CATCH','#5cc8ff'],['double','2X PTS','#ffd23f'],['shield','SHIELD','#8fe3ff']].filter(([k])=>timers[k]>0).map(([k,l,c])=>[`${l} ${Math.ceil(timers[k])}`,c]);
+  const act=[['straight','STRAIGHT','#e8ecff'],['wide','WIDE',C.teal],['slow','SLOW',C.amber],['laser','LASER',C.coral],['fire','FIRE','#ff7a2e'],['catch','CATCH','#5cc8ff'],['double','2X PTS','#ffd23f'],['shield','SHIELD','#8fe3ff']].filter(([k])=>timers[k]>0).map(([k,l,c])=>[`${l} ${Math.ceil(timers[k])}`,c]);
   if(bombs>0)act.push([`BOMB x${bombs}`,'#ff4d4d']);
   act.forEach(([t,c])=>{const w=ctx.measureText(t).width+12;if(tx+w>W){tx=8;ty-=14}ctx.fillStyle=c;ctx.fillText(t,tx,ty);tx+=w});
   // boss shots
