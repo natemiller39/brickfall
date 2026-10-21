@@ -154,7 +154,7 @@ li:nth-child(1) .rk{color:var(--amber)} li:nth-child(2) .rk{color:#d8dcf5} li:nt
       <div><span class="pill" style="background:#8fe3ff">X</span>Shield saves one ball</div>
       <div><span class="pill" style="background:#ffd23f">2</span>Double points</div>
       <div><span class="pill" style="background:#ff4d4d">B</span>Bombs blast bricks</div>
-      <div><span class="pill" style="background:#e8ecff">I</span>Straight shot: ball flies straight up</div>
+      <div><span class="pill" style="background:#e8ecff">I</span>Straight shot: catch, aim, fire straight up</div>
     </div>
     <div class="legend">
       <div><span class="pill" style="background:#7dff6a">1</span>Buzzer · 50 + 150</div>
@@ -291,7 +291,7 @@ function loadLevel(){
   resetBall();
 }
 function resetBall(){balls=[{x:pad.x,y:pad.y-9,vx:0,vy:0,r:8,rot:0,stuck:true,speed:baseSpeed()}];combo=0}
-function launch(){balls.forEach(b=>{if(b.stuck){const a=timers.straight>0?0:b.off?Math.max(-.9,Math.min(.9,b.off/(pad.w/2)*.9)):(Math.random()*.5-.25);b.off=0;b.hold=0;b.vx=Math.sin(a)*b.speed;b.vy=-Math.cos(a)*b.speed;b.stuck=false}})}
+function launch(){balls.forEach(b=>{if(b.stuck){const a=(timers.straight>0||b.sc)?0:b.off?Math.max(-.9,Math.min(.9,b.off/(pad.w/2)*.9)):(Math.random()*.5-.25);b.off=0;b.hold=0;b.sc=false;b.vx=Math.sin(a)*b.speed;b.vy=-Math.cos(a)*b.speed;b.stuck=false}})}
 // ---------- iPhone play mode
 const TOUCH=matchMedia('(pointer:coarse)').matches;
 const gameEl=document.querySelector('.game');
@@ -321,11 +321,12 @@ addEventListener('pointerup',e=>{if(e.pointerType==='mouse')mouseHeld=false});
 [cv,document.getElementById('thumb')].forEach(el=>{
 el.addEventListener('pointerdown',e=>{
   if(e.pointerType==='mouse'){pad.target=toX(e);mouseHeld=true}else{drag={id:e.pointerId,sx:toX(e),px:pad.target};try{el.setPointerCapture(e.pointerId)}catch(_){}}
-  if(state==='ready'){state='play';launch()}else if(state==='play'&&balls.some(b=>b.stuck))launch()});
+  if(state==='ready'){state='play';launch()}else if(state==='play'&&balls.some(b=>b.stuck)&&!(e.pointerType!=='mouse'&&balls.some(b=>b.stuck&&b.sc)))launch()});
 el.addEventListener('pointermove',e=>{
   if(e.pointerType==='mouse'){if(el===cv)pad.target=toX(e);return}
   if(drag&&drag.id===e.pointerId)pad.target=drag.px+(toX(e)-drag.sx)*1.35});
-['pointerup','pointercancel'].forEach(t=>el.addEventListener(t,e=>{if(drag&&drag.id===e.pointerId)drag=null}));
+['pointerup','pointercancel'].forEach(t=>el.addEventListener(t,e=>{if(drag&&drag.id===e.pointerId)drag=null;
+  if(t==='pointerup'&&e.pointerType!=='mouse'&&state==='play'&&!paused&&balls.some(b=>b.stuck&&b.sc))launch()}));
 });
 addEventListener('keydown',e=>{
   if(document.activeElement&&document.activeElement.tagName==='INPUT')return;
@@ -587,7 +588,7 @@ function update(dt){
       // paddle
       if(b.vy>0&&b.y+b.r>=pad.y&&b.y-b.r<=pad.y+pad.h&&Math.abs(b.x-pad.x)<=pad.w/2+b.r){
         const t=Math.max(-1,Math.min(1,(b.x-pad.x)/(pad.w/2))),a=timers.straight>0?0:t*1.05,s=Math.hypot(b.vx,b.vy);
-        b.vx=Math.sin(a)*s;b.vy=-Math.cos(a)*s;b.y=pad.y-b.r;combo=0;if(timers.catch>0){b.stuck=true;b.off=b.x-pad.x;b.hold=1.6}beep(160,.05,'square',.05);
+        b.vx=Math.sin(a)*s;b.vy=-Math.cos(a)*s;b.y=pad.y-b.r;combo=0;if(timers.straight>0){b.stuck=true;b.sc=true;b.off=0;b.hold=5}else if(timers.catch>0){b.stuck=true;b.off=b.x-pad.x;b.hold=1.6}beep(160,.05,'square',.05);
       }
       // creatures
       for(const c of critters){if(c.dead)continue;const dx=b.x-c.x,dy=b.y-c.y,d=Math.hypot(dx,dy);
@@ -699,7 +700,7 @@ function draw(){
   ctx.fillStyle='#ffffff07';ctx.fillRect(0,DRAG_Y,W,H-DRAG_Y);ctx.strokeStyle='#ffffff14';ctx.setLineDash([4,6]);ctx.beginPath();ctx.moveTo(0,DRAG_Y+.5);ctx.lineTo(W,DRAG_Y+.5);ctx.stroke();ctx.setLineDash([]);
   if(state==='ready'||state==='title'){ctx.fillStyle='#ffffff55';ctx.font='600 11px "Chakra Petch", sans-serif';ctx.textAlign='center';ctx.fillText('◀  DRAG ANYWHERE TO MOVE  ▶',W/2,DRAG_Y+50)}
   // paddle
-  if(timers.straight>0){ctx.save();ctx.strokeStyle='#e8ecff55';ctx.lineWidth=2;ctx.setLineDash([3,7]);ctx.lineDashOffset=-performance.now()/30;ctx.beginPath();ctx.moveTo(pad.x,pad.y-4);ctx.lineTo(pad.x,40);ctx.stroke();ctx.restore()}
+  if(timers.straight>0||balls.some(b=>b.stuck&&b.sc)){ctx.save();ctx.strokeStyle='#e8ecff55';ctx.lineWidth=2;ctx.setLineDash([3,7]);ctx.lineDashOffset=-performance.now()/30;ctx.beginPath();ctx.moveTo(pad.x,pad.y-4);ctx.lineTo(pad.x,40);ctx.stroke();ctx.restore()}
   const g=ctx.createLinearGradient(0,pad.y,0,pad.y+pad.h);g.addColorStop(0,timers.laser>0?C.coral:C.teal);g.addColorStop(1,'#16806e');
   ctx.save();ctx.shadowColor=timers.laser>0?C.coral:C.teal;ctx.shadowBlur=16;ctx.fillStyle=g;rr(pad.x-pad.w/2,pad.y,pad.w,pad.h,6);ctx.fill();ctx.restore();
   ctx.strokeStyle='#ffffffcc';ctx.lineWidth=1.5;rr(pad.x-pad.w/2,pad.y,pad.w,pad.h,6);ctx.stroke();ctx.lineWidth=1;
@@ -739,6 +740,7 @@ function draw(){
   // banner / hint
   ctx.textAlign='center';
   if(banner){ctx.globalAlpha=Math.min(1,banner.t*2);ctx.fillStyle='#fff';ctx.font='28px Bungee, Impact, sans-serif';ctx.fillText(banner.text,W/2,H*.52);ctx.font='600 14px "Chakra Petch", sans-serif';ctx.fillStyle=C.amber;ctx.fillText(banner.sub,W/2,H*.52+28);ctx.globalAlpha=1}
+  else if(state==='play'&&balls.some(b=>b.stuck&&b.sc)){ctx.fillStyle='#e8ecff';ctx.font='700 13px "Chakra Petch", sans-serif';ctx.fillText(TOUCH?'Slide to aim · lift to fire':'Aim · click or Space to fire',W/2,pad.y-34)}
   else if(state==='ready'){ctx.fillStyle='#ffffffb0';ctx.font='600 13px "Chakra Petch", sans-serif';ctx.fillText('Tap or press Space to launch',W/2,pad.y-34)}
   ctx.restore();
 }
