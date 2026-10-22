@@ -99,9 +99,12 @@ http.createServer((req, res) => {
     if (!tok || q.get('token') !== tok) return send(res, 403, { error: 'Forbidden' }, origin);
     const game = gameOf(String(q.get('game') || '')), wk = weekKey();
     const name = String(q.get('name') || '').replace(/[\u0000-\u001f\u007f<>]/g, '').trim().slice(0, 20);
-    const pid = String(q.get('pid') || ('admin' + name.toLowerCase().replace(/[^a-z0-9]/g, ''))).slice(0, 40);
+    let pid = String(q.get('pid') || ('admin' + name.toLowerCase().replace(/[^a-z0-9]/g, ''))).slice(0, 40);
     const run = async () => {
       await init();
+      // Optional: target an existing player's row by their exact board name.
+      if (q.get('match')) { const m = (await pool.query('SELECT pid FROM scores WHERE name=$1 AND week=$2 AND game=$3', [String(q.get('match')), wk, game])).rows;
+        if (m.length !== 1) return { error: `Found ${m.length} rows named that.` }; pid = m[0].pid; }
       if (url.pathname === '/api/admin/delete') { const r = await pool.query('DELETE FROM scores WHERE pid=$1 AND week=$2 AND game=$3', [pid, wk, game]); return { ok: true, deleted: r.rowCount }; }
       if (url.pathname === '/api/admin/set') {
         const score = Math.floor(Number(q.get('score'))), level = Math.floor(Number(q.get('level')) || 1), bosses = Math.floor(Number(q.get('bosses')) || 0);
