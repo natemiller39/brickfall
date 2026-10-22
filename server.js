@@ -30,7 +30,8 @@ function init() {
     CREATE INDEX IF NOT EXISTS scores_week_score ON scores (week, score DESC);
     ALTER TABLE scores ADD COLUMN IF NOT EXISTS game TEXT NOT NULL DEFAULT 'brickfall';
     ALTER TABLE scores DROP CONSTRAINT IF EXISTS scores_pkey;
-    CREATE UNIQUE INDEX IF NOT EXISTS scores_pid_week_game ON scores (pid, week, game);`).catch(e => { ready = null; throw e; });
+    CREATE UNIQUE INDEX IF NOT EXISTS scores_pid_week_game ON scores (pid, week, game);
+    ALTER TABLE scores ALTER COLUMN score TYPE BIGINT;`).catch(e => { ready = null; throw e; });
   return ready;
 }
 
@@ -67,7 +68,7 @@ async function post(body) {
   const score = Math.floor(Number(body.score)), level = Math.floor(Number(body.level) || 1), bosses = Math.floor(Number(body.bosses) || 0);
   if (!/^[a-z0-9]{12,40}$/i.test(pid)) return [400, { error: 'Missing player id. Reload the page and try again.' }];
   if (!name) return [400, { error: 'Enter a name first.' }];
-  if (!Number.isFinite(score) || score < 0 || score > 5000000) return [400, { error: 'That score looks wrong.' }];
+  if (!Number.isFinite(score) || score < 0 || score > 1e12) return [400, { error: 'That score looks wrong.' }];
   if (level < 1 || level > 999 || bosses < 0 || bosses > 333) return [400, { error: 'That run looks wrong.' }];
   await init();
   const wk = weekKey();
@@ -91,6 +92,29 @@ http.createServer((req, res) => {
     res.writeHead(204, h); return res.end();
   }
   if (url.pathname === '/health') return send(res, 200, { ok: true, db: !!pool }, origin);
+  // Owner-only fixes: /api/admin/set?token=..&game=..&name=..&score=..&level=..&bosses=..[&pid=..]
+  //                   /api/admin/delete?token=..&game=..&pid=..
+  if (url.pathname.startsWith('/api/admin/')) {
+    const q = url.searchParams, tok = process.env.ADMIN_TOKEN || '';
+    if (!tok || q.get('token') !== tok) return send(res, 403, { error: 'Forbidden' }, origin);
+    const game = gameOf(String(q.get('game') || '')), wk = weekKey();
+    const name = String(q.get('name') || '').replace(/[\u0000-\u001f\u007f<>]/g, '').trim().slice(0, 20);
+    const pid = String(q.get('pid') || ('admin' + name.toLowerCase().replace(/[^a-z0-9]/g, ''))).slice(0, 40);
+    const run = async () => {
+      await init();
+      if (url.pathname === '/api/admin/delete') { const r = await pool.query('DELETE FROM scores WHERE pid=$1 AND week=$2 AND game=$3', [pid, wk, game]); return { ok: true, deleted: r.rowCount }; }
+      if (url.pathname === '/api/admin/set') {
+        const score = Math.floor(Number(q.get('score'))), level = Math.floor(Number(q.get('level')) || 1), bosses = Math.floor(Number(q.get('bosses')) || 0);
+        if (!name || !Number.isFinite(score) || score < 0) return { error: 'Need name and score.' };
+        await pool.query(`INSERT INTO scores (pid,week,name,score,level,bosses,game) VALUES ($1,$2,$3,$4,$5,$6,$7)
+          ON CONFLICT (pid,week,game) DO UPDATE SET name=EXCLUDED.name, score=EXCLUDED.score, level=EXCLUDED.level, bosses=EXCLUDED.bosses, updated_at=now()`,
+          [pid, wk, name, score, level, bosses, game]);
+        return { ok: true, pid, game, week: wk, name, score };
+      }
+      return { error: 'Unknown admin action.' };
+    };
+    return run().then(d => send(res, d.error ? 400 : 200, d, origin)).catch(e => { console.error(e); send(res, 503, { error: 'Leaderboard is unavailable.' }, origin); });
+  }
   const bm = /^\/api\/board(?:\/([a-z]+))?\/?$/.exec(url.pathname);
   if (req.method === 'GET' && bm) {
     return board(String(url.searchParams.get('pid') || ''), gameOf(bm[1] || String(url.searchParams.get('game') || ''))).then(d => send(res, 200, d, origin))
