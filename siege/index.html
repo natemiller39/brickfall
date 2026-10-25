@@ -48,7 +48,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--teal);outline-o
 .hud small{display:block;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
 .hud b{font-family:var(--display);font-weight:400;font-size:16px;font-variant-numeric:tabular-nums;white-space:nowrap}
 #hLives.low{color:var(--coral)} #hCoins{color:var(--gold)}
-.stage{position:relative;width:100%;aspect-ratio:360/540;max-width:100%;border-radius:10px;overflow:hidden;border:1px solid var(--line);box-shadow:0 0 0 4px #0f1228,0 18px 40px #0008}
+.stage{touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;position:relative;width:100%;aspect-ratio:360/540;max-width:100%;border-radius:10px;overflow:hidden;border:1px solid var(--line);box-shadow:0 0 0 4px #0f1228,0 18px 40px #0008}
 canvas{display:block;width:100%;height:100%;touch-action:none;cursor:pointer}
 .bar{margin-top:8px;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 10px;min-height:62px;display:flex;align-items:center}
 .bv{display:flex;align-items:center;gap:8px;width:100%;flex-wrap:wrap}
@@ -302,7 +302,7 @@ let previewRoute=null;
 
 // ---------- Towers: power-up bricks
 const TOWERS={
- W:{name:'Wall',col:'#7d83a8',cost:6,info:'Blocks the path so ground foes go around. Drag to lay several.'},
+ W:{name:'Wall',col:'#7d83a8',cost:6,info:'Blocks the path so ground foes go around.'},
  M:{name:'Machine Gun',col:'#2ee6c5',cost:55,range:1.6,rate:7,dmg:3,hits:'all',info:'Very fast, small bullets. Armor soaks them up.'},
  R:{name:'Rifle',col:'#e8ecff',cost:90,range:3.0,rate:.5,dmg:40,hits:'all',pierce:1,info:'Huge range, slow shots that punch through armor.'},
  T:{name:'Tank',col:'#ff4d4d',cost:130,range:2.0,rate:.45,dmg:32,splash:.95,hits:'ground',info:'Shells that blast a whole group. Only 35% against flyers.'},
@@ -570,13 +570,16 @@ function build(c,r,quiet){
   if(!tileFree(c,r))return false;
   const why=blockReason(c,r);if(why){if(!quiet){floater(tc(c),tc(r)-14,why,'#ff5d73',1.1);beep(150,.08,'triangle',.05)}return false}
   const st=gm==='stand';
-  const t={k,c,r,lvl:st&&k!=='W'?3:1,spent:st?0:TOWERS[k].cost,cd:.2,ang:-Math.PI/2,stun:0,mode:'first',flash:.25,fresh:true};
+  const t={k,c,r,lvl:st&&k!=='W'?3:1,spent:st?0:TOWERS[k].cost,cd:.2,ang:-Math.PI/2,stun:0,mode:'first',flash:.25,fresh:true,born:clock};
   towers.push(t);if(!st)coins-=TOWERS[k].cost;reflow();burst(tc(c),tc(r),TOWERS[k].col,k==='W'?6:12,120);
   if(k==='W')sfx('wall',420+Math.random()*80,.04,'square',.04,40);else{beep(620,.06,'square',.05);setTimeout(()=>beep(930,.08,'square',.05),60)}
   ghost=null;if(!canBuild(k))tool=null;refreshBar();return true;
 }
 function upgrade(t){const c=upCost(t);if(!c||coins<c)return;coins-=c;t.spent+=c;t.lvl++;t.flash=.3;burst(t.c*T+T/2,t.r*T+T/2,LV_COL[t.lvl-1],16);beep(760,.08,'sine',.06);setTimeout(()=>beep(1140,.1,'sine',.06),80);refreshBar()}
 const canRemove=t=>gm!=='stand'||t.k==='W'||wave===0;
+function removeWall(t){if(!canRemove(t))return false;if(gm!=='stand')coins+=refund(t);towers=towers.filter(x=>x!==t);if(sel===t)sel=null;reflow();
+  for(let i=0;i<6;i++){const a=Math.random()*6.28,v=40+Math.random()*80;parts.push({x:tc(t.c)+(Math.random()-.5)*16,y:tc(t.r)+(Math.random()-.5)*10,vx:Math.cos(a)*v,vy:Math.sin(a)*v-40,life:.45,col:C.steel,sq:1})}
+  sfx('unwall',260+Math.random()*60,.04,'triangle',.04,40);return true}
 function sell(t){if(!canRemove(t))return;if(gm!=='stand')coins+=refund(t);towers=towers.filter(x=>x!==t);reflow();burst(t.c*T+T/2,t.r*T+T/2,C.steel,12);beep(300,.08,'triangle',.05);sel=null;refreshBar()}
 
 // ---------- Update
@@ -771,7 +774,8 @@ function drawFuse(){ctx.save();ctx.strokeStyle='#ff5d73';ctx.lineWidth=3;ctx.sha
 function drawTower(t,ghostMode,bad){
   const D=TOWERS[t.k],x=t.c*T,y=t.r*T,bx=x+4,by=y+9,bw=T-8,bh=T-16;
   ctx.save();if(ghostMode)ctx.globalAlpha=.55;
-  if(t.k==='W'){ctx.fillStyle=t.flash>0?'#fff':C.steel;rr(x+2,y+4,T-4,T-8,4);ctx.fill();ctx.save();ctx.clip();ctx.strokeStyle='#ffffff2e';ctx.lineWidth=2;
+  if(t.k==='W'){if(!ghostMode&&t.born!=null){const g=Math.min(1,(clock-t.born)*9);if(g<1){const k=.55+.45*(1-Math.pow(1-g,3));ctx.translate(x+T/2,y+T/2);ctx.scale(k,k);ctx.translate(-x-T/2,-y-T/2)}}
+    ctx.fillStyle=t.flash>0?'#fff':C.steel;rr(x+2,y+4,T-4,T-8,4);ctx.fill();ctx.save();ctx.clip();ctx.strokeStyle='#ffffff2e';ctx.lineWidth=2;
       for(let i=-30;i<T;i+=7){ctx.beginPath();ctx.moveTo(x+i,y+T-4);ctx.lineTo(x+i+T,y+4);ctx.stroke()}ctx.restore();
       ctx.fillStyle='#ffffff40';ctx.fillRect(x+5,y+6,T-10,2);
       if(bad){ctx.strokeStyle='#ff5d73';ctx.lineWidth=2;ctx.strokeRect(x+2,y+2,T-4,T-4)}ctx.restore();return}
@@ -901,7 +905,7 @@ function refreshBar(){
     else{setT('wvTitle','Brickfall Siege');setT('wvSub','Pick a map and press Play.');setT('wvMods','');$('sendBtn').disabled=true;setT('sendBtn','Send wave')}
   }else if(mode==='place'){const D=TOWERS[tool];setT('plTitle',gm==='stand'?`${D.name} · ${tool==='W'?'free':standLeft(tool)+' left'}`:`${D.name} · ${D.cost} coins`);
     const ok=ghost&&ghost.ok&&canBuild(tool);
-    setT('plSub',!canBuild(tool)?(gm==='stand'?(wave>0?'Towers are locked in.':'All placed. Remove one to move it.'):D.max&&towers.filter(t=>t.k===tool).length>=D.max?'You already have 3 jackpot bricks.':'Not enough coins yet.'):ghost?(ok?(tool==='W'?'Tap or drag to lay walls. The amber line is the new route.':'Tap again or press Build. Amber line = new route.'):ghost.why):D.info+(tool==='W'?'':' Tap a dark tile.'));
+    setT('plSub',!canBuild(tool)?(gm==='stand'?(wave>0?'Towers are locked in.':'All placed. Remove one to move it.'):D.max&&towers.filter(t=>t.k===tool).length>=D.max?'You already have 3 jackpot bricks.':'Not enough coins yet.'):ghost?(ok?(tool==='W'?'Drag to lay walls. Tap or drag over walls to remove them.':'Tap again or press Build. Amber line = new route.'):ghost.why):(tool==='W'?'Drag to lay walls. Tap or drag over walls to remove them.':D.info+' Tap a dark tile.'));
     $('buildBtn').disabled=!ok}
   else{const t=sel,D=TOWERS[t.k],s=stat(t);
     setT('twTitle',`${D.name} · Lv ${t.lvl}${t.stun>0?' · jammed':''}`);
@@ -930,9 +934,12 @@ cv.addEventListener('pointerdown',e=>{
   if(paused||(state!=='build'&&state!=='wave'))return;
   const {x,y}=toXY(e),c=Math.floor(x/T),r=Math.floor(y/T);
   const t=towerAt(c,r);
+  if(tool==='W'){
+    // Wall tool: drag from an empty tile to lay walls, from a wall to erase walls. Towers are left alone.
+    if(t&&t.k!=='W'){floater(tc(c),tc(r)-16,'Tower here',C.amber,.6);return}
+    paint={id:e.pointerId,last:null,erase:!!t,moved:false};try{cv.setPointerCapture(e.pointerId)}catch(_){}paintAt(c,r);return}
   if(tool){
     if(t){tool=null;ghost=null;sel=t;refreshBar();return}
-    if(tool==='W'){paint={id:e.pointerId,last:null};try{cv.setPointerCapture(e.pointerId)}catch(_){}paintAt(c,r);return}
     if(!tileFree(c,r)){ghost={c,r};refreshBar();return}
     if(e.pointerType==='mouse'||(ghost&&ghost.c===c&&ghost.r===r)){build(c,r);return}
     ghost={c,r};refreshBar();return}
@@ -940,8 +947,15 @@ cv.addEventListener('pointerdown',e=>{
 });
 // Walls: tap to place one, drag to lay a line of them
 let paint=null;
-function paintAt(c,r){if(paint.last&&paint.last.c===c&&paint.last.r===r)return;paint.last={c,r};
-  if(c<0||c>=COLS||r<0||r>=ROWS)return;if(!build(c,r,!!paint.moved)){ghost={c,r};refreshBar()}else ghost={c,r}}
+function paintAt(c,r){c=Math.max(0,Math.min(COLS-1,c));r=Math.max(0,Math.min(ROWS-1,r));
+  const L=paint.last;if(L&&L.c===c&&L.r===r)return;
+  // fill every tile between the last one and this one, so fast swipes leave no gaps
+  const cells=[];if(!L)cells.push({c,r});else{let x=L.c,y=L.r;while(x!==c||y!==r){const dx=c-x,dy=r-y;if(Math.abs(dx)>=Math.abs(dy))x+=Math.sign(dx);else y+=Math.sign(dy);cells.push({c:x,r:y})}}
+  paint.last={c,r};
+  for(const q of cells){const w=towerAt(q.c,q.r);
+    if(paint.erase){if(w&&w.k==='W')removeWall(w)}
+    else if(!w)build(q.c,q.r,paint.moved||!!L)}
+  ghost=paint.erase?null:{c,r};refreshBar()}
 ['pointerup','pointercancel'].forEach(tp=>cv.addEventListener(tp,e=>{if(paint&&paint.id===e.pointerId){paint=null;if(e.pointerType!=='mouse')ghost=null;refreshBar()}}));
 cv.addEventListener('pointermove',e=>{const {x,y}=toXY(e),c=Math.floor(x/T),r=Math.floor(y/T);
   if(paint&&paint.id===e.pointerId&&tool==='W'){paint.moved=true;paintAt(c,r);return}
@@ -971,7 +985,11 @@ gameEl.addEventListener('touchmove',e=>{if(document.body.classList.contains('pla
 (function(){const m=document.querySelector('meta[name=viewport]');if(m)m.setAttribute('content','width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover')})();
 ['gesturestart','gesturechange','gestureend'].forEach(t=>document.addEventListener(t,e=>e.preventDefault(),{passive:false}));
 document.addEventListener('touchmove',e=>{if(e.touches.length>1)e.preventDefault()},{passive:false});
-let lastTap=0;document.addEventListener('touchend',e=>{if(e.target.closest('input,button,label,canvas,.tw'))return;const n=Date.now();if(n-lastTap<350)e.preventDefault();lastTap=n},{passive:false});
+// The field uses pointer events, so its touches never need Safari's default handling. Cancelling every touchend there
+// stops the "tap twice to build" pattern from being read as a double-tap zoom.
+cv.addEventListener('touchend',e=>{e.preventDefault()},{passive:false});
+cv.addEventListener('touchstart',e=>{if(e.touches.length>1)e.preventDefault()},{passive:false});
+let lastTap=0;document.addEventListener('touchend',e=>{if(e.target===cv||e.target.closest('input,button,label,.tw'))return;const n=Date.now();if(n-lastTap<350)e.preventDefault();lastTap=n},{passive:false});
 gameEl.addEventListener('contextmenu',e=>{if(document.body.classList.contains('playing'))e.preventDefault()});
 $('boardBtn').onclick=()=>{setPlaying(false);document.querySelector('.board').scrollIntoView({behavior:'smooth'})};
 
