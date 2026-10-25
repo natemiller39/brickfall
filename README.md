@@ -9,6 +9,10 @@ On iPhone, open the link in Safari, tap Share, then **Add to Home Screen** to pl
 - Pause any time and tap **Save & quit**; tap **Continue** next time to pick up where you left off. Saves stay on the device for the current week.
 - Shared top 10 for everyone who plays the site, in 2-week seasons that reset every other Monday at midnight Pacific (first season ends Nov 2, 2026).
 
+## Brickfall Siege
+
+A tower defense in the Brickfall world at https://brickfall.onrender.com/siege/. Last Stand mode: 3 of every tower at max level, unlimited walls, endless waves. Its season board ranks by wave reached, then points.
+
 ## Leaderboard server
 
 `server.js` is a small Node service (Render web service) backed by Postgres. It needs `DATABASE_URL`; optional `ALLOWED_ORIGINS` (default `https://brickfall.onrender.com`).

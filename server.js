@@ -1,4 +1,5 @@
-// Brickfall score server: shared season leaderboards for Brickfall and Jackpot Run.
+// Brickfall score server: shared season leaderboards for Brickfall, Jackpot Run and Brickfall Siege.
+// Siege ranks by wave reached (stored in `level`), then score; the other games rank by score.
 // Needs DATABASE_URL (a Postgres connection string). Two-week seasons reset Monday 00:00 Pacific.
 const http = require('http');
 const { Pool } = require('pg');
@@ -50,14 +51,16 @@ function send(res, code, body, origin) {
   res.writeHead(code, h); res.end(JSON.stringify(body));
 }
 
-const GAMES = ['brickfall', 'jackpot'];
+const GAMES = ['brickfall', 'jackpot', 'siege'];
+const byWave = g => g === 'siege';
 const gameOf = g => (GAMES.includes(g) ? g : 'brickfall');
 
 async function board(pid, game) {
   await init();
   const wk = weekKey();
-  const top = (await pool.query('SELECT pid,name,score,level,bosses FROM scores WHERE week=$1 AND game=$2 ORDER BY score DESC, updated_at ASC LIMIT 10', [wk, game])).rows;
-  const hof = (await pool.query(`SELECT DISTINCT ON (week) to_char(week,'YYYY-MM-DD') AS week,name,score FROM scores WHERE week<$1 AND game=$2 ORDER BY week DESC, score DESC LIMIT 5`, [wk, game])).rows;
+  const order = byWave(game) ? 'level DESC, score DESC' : 'score DESC';
+  const top = (await pool.query(`SELECT pid,name,score,level,bosses FROM scores WHERE week=$1 AND game=$2 ORDER BY ${order}, updated_at ASC LIMIT 10`, [wk, game])).rows;
+  const hof = (await pool.query(`SELECT DISTINCT ON (week) to_char(week,'YYYY-MM-DD') AS week,name,score,level FROM scores WHERE week<$1 AND game=$2 ORDER BY week DESC, ${order} LIMIT 5`, [wk, game])).rows;
   const mine = pid ? (await pool.query('SELECT name,score,level,bosses FROM scores WHERE pid=$1 AND week=$2 AND game=$3', [pid, wk, game])).rows[0] || null : null;
   return { game, week: wk, top: top.map(({ pid: p, ...r }) => ({ ...r, mine: p === pid })), hof, mine };
 }
@@ -72,7 +75,20 @@ async function post(body) {
   if (level < 1 || level > 999 || bosses < 0 || bosses > 333) return [400, { error: 'That run looks wrong.' }];
   await init();
   const wk = weekKey();
-  const before = (await pool.query('SELECT score FROM scores WHERE pid=$1 AND week=$2 AND game=$3', [pid, wk, game])).rows[0];
+  const before = (await pool.query('SELECT score,level FROM scores WHERE pid=$1 AND week=$2 AND game=$3', [pid, wk, game])).rows[0];
+  if (byWave(game)) {
+    // Siege: a run replaces your best only if it reached a later wave, or the same wave with more points.
+    const improved = !before || level > before.level || (level === before.level && score > +before.score);
+    const row = (await pool.query(`INSERT INTO scores (pid,week,name,score,level,bosses,game) VALUES ($1,$2,$3,$4,$5,$6,$7)
+      ON CONFLICT (pid,week,game) DO UPDATE SET name=EXCLUDED.name,
+        score=CASE WHEN (EXCLUDED.level,EXCLUDED.score)>(scores.level,scores.score) THEN EXCLUDED.score ELSE scores.score END,
+        bosses=CASE WHEN (EXCLUDED.level,EXCLUDED.score)>(scores.level,scores.score) THEN EXCLUDED.bosses ELSE scores.bosses END,
+        level=CASE WHEN (EXCLUDED.level,EXCLUDED.score)>(scores.level,scores.score) THEN EXCLUDED.level ELSE scores.level END,
+        updated_at=now()
+      RETURNING score,level`, [pid, wk, name, score, level, bosses, game])).rows[0];
+    const rank = +(await pool.query('SELECT COUNT(*)+1 AS r FROM scores WHERE week=$1 AND game=$2 AND (level,score)>($3,$4)', [wk, game, row.level, row.score])).rows[0].r;
+    return [200, { ok: true, improved, best: row.score, bestWave: row.level, rank }];
+  }
   const improved = !before || score > before.score;
   const row = (await pool.query(`INSERT INTO scores (pid,week,name,score,level,bosses,game) VALUES ($1,$2,$3,$4,$5,$6,$7)
     ON CONFLICT (pid,week,game) DO UPDATE SET name=EXCLUDED.name,
