@@ -74,6 +74,10 @@ canvas{display:block;width:100%;height:100%;touch-action:none;cursor:pointer}
 .btn:disabled{opacity:.4;cursor:default}
 .row{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
 .maps{display:grid;gap:6px;width:100%;max-width:280px}
+.idle{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--fg);cursor:pointer;max-width:280px;text-align:left}
+.idle input{width:18px;height:18px;accent-color:var(--teal);margin:0;flex:none}
+.cbar{width:220px;max-width:100%;height:8px;border-radius:4px;background:var(--panel);border:1px solid var(--line);overflow:hidden}
+.cbar i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--teal),var(--amber))}
 .modes{display:grid;grid-template-columns:1fr 1fr;gap:6px;width:100%;max-width:280px}
 .mode{display:grid;gap:3px;text-align:left;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 10px;color:var(--fg);font:400 12px var(--body);cursor:pointer;line-height:1.3}
 .mode b{font:400 13px var(--display);letter-spacing:.02em}.mode small{color:var(--muted)}
@@ -155,8 +159,15 @@ body.playing .tray{width:100%;margin-top:5px}
           <button type="button" class="mode" data-m="stand"><b>Last Stand</b><small>3 of every tower, maxed. Build once, survive forever</small></button>
         </div>
         <div class="maps" id="maps" hidden></div>
+        <label class="idle" for="idleChk"><input type="checkbox" id="idleChk"> Keep playing while I’m away</label>
         <div class="row"><button class="btn" id="contBtn" type="button" hidden>Continue</button><button class="btn" id="startBtn" type="button">Play</button></div>
         <div class="note" id="saveNote"></div>
+      </div>
+      <div class="ov" id="ovCatch" hidden>
+        <h2>While you were away…</h2>
+        <div class="big" id="catchWave">Wave 1</div>
+        <p id="catchText">Your fortress kept fighting. Catching up.</p>
+        <div class="cbar"><i id="catchFill"></i></div>
       </div>
       <div class="ov" id="ovPause" hidden>
         <h2>Paused</h2>
@@ -209,7 +220,7 @@ body.playing .tray{width:100%;margin-top:5px}
       <div><span class="pill" style="background:#58a6ff">E</span>Electric · chain jolts</div>
       <div><span class="pill" style="background:var(--violet)">A</span>Air Defense · flyers</div>
       <div><span class="pill" style="background:#b6e63a">G</span>Gas · toxic cloud</div>
-      <div class="wide">You get <b>3 of every tower</b>, already at max level, and unlimited free walls. Foes take the shortest way from the red gate to your castle, so lay walls to stretch that route into a maze; the dashed line shows it and turns amber to preview a change. You can't seal it off completely. Place everything, press <b>Start</b>, and the waves come back to back, harder every time. Towers lock when you start, but walls can be built and removed anytime, even mid-wave. The game saves after every wave; Pause lets you save and quit. Tanks and Flamethrowers do only 35% to flyers, and Air Defense only 35% to ground foes. Rifle shots and Gas ignore armor. The Laser aims nearby but its beam crosses the whole field. How far you get is your score.</div>
+      <div class="wide">You get <b>3 of every tower</b>, already at max level, and unlimited free walls. Foes take the shortest way from the red gate to your castle, so lay walls to stretch that route into a maze; the dashed line shows it and turns amber to preview a change. You can't seal it off completely. Place everything, press <b>Start</b>, and the waves come back to back, harder every time. Towers lock when you start, but walls can be built and removed anytime, even mid-wave. The game saves as you play; Pause lets you save and quit. With <b>Keep playing while I’m away</b> on (start screen), your fortress keeps fighting after you leave, up to 8 hours, and the game fast-forwards to catch up when you come back. Tanks and Flamethrowers do only 35% to flyers, and Air Defense only 35% to ground foes. Rifle shots and Gas ignore armor. The Laser aims nearby but its beam crosses the whole field. How far you get is your score.</div>
     </div>
     <div class="legend">
       <h4>Combos</h4>
@@ -380,7 +391,8 @@ let actx=null,muted=false;
 try{muted=localStorage.getItem('bs_mute')==='1'}catch(e){}
 $('mute').textContent=muted?'Sound off':'Sound on';
 $('mute').onclick=()=>{muted=!muted;$('mute').textContent=muted?'Sound off':'Sound on';try{localStorage.setItem('bs_mute',muted?'1':'0')}catch(e){}};
-function beep(f,d=.06,type='square',v=.05){if(muted)return;try{actx=actx||new (window.AudioContext||window.webkitAudioContext)();const o=actx.createOscillator(),g=actx.createGain();o.type=type;o.frequency.value=f;g.gain.setValueAtTime(v,actx.currentTime);g.gain.exponentialRampToValueAtTime(.0001,actx.currentTime+d);o.connect(g);g.connect(actx.destination);o.start();o.stop(actx.currentTime+d)}catch(e){}}
+let catching=false;
+function beep(f,d=.06,type='square',v=.05){if(muted||catching)return;try{actx=actx||new (window.AudioContext||window.webkitAudioContext)();const o=actx.createOscillator(),g=actx.createGain();o.type=type;o.frequency.value=f;g.gain.setValueAtTime(v,actx.currentTime);g.gain.exponentialRampToValueAtTime(.0001,actx.currentTime+d);o.connect(g);g.connect(actx.destination);o.start();o.stop(actx.currentTime+d)}catch(e){}}
 const lastSfx={};function sfx(k,f,d,type,v,gap=70){const n=performance.now();if(lastSfx[k]&&n-lastSfx[k]<gap)return;lastSfx[k]=n;beep(f,d,type,v)}
 
 // ---------- State
@@ -955,11 +967,37 @@ function pauseGame(){paused=true;$('pauseNote').textContent='';
   $('pauseText').textContent=gm==='stand'?(state==='build'?'Save & quit keeps your run until you come back this season.':'Quit after this wave finishes it, then saves your run for later.'):state==='build'?'Save & quit keeps your run, bricks and coins until you come back this season.':'You can save between waves. Finish this wave first, or resume.';
   $('saveBtn').hidden=state!=='build'&&gm!=='stand';$('saveBtn').textContent=gm==='stand'&&state==='wave'?(quitAfter?'Quitting after this wave':'Quit after this wave'):'Save & quit';$('saveBtn').disabled=quitAfter;showOv('ovPause')}
 let quitAfter=false;
+// Idle: keep the run going while the player is away, then fast-forward when they return
+let idleOn=true;try{idleOn=localStorage.getItem('bs_idle')!=='0'}catch(e){}
+$('idleChk').checked=idleOn;$('idleChk').onchange=()=>{idleOn=$('idleChk').checked;try{localStorage.setItem('bs_idle',idleOn?'1':'0')}catch(e){};refreshContinue()};
+const runIdle=()=>idleOn&&gm==='stand'&&wave>0;
+const MAX_AWAY=8*3600;
+function fmtAway(sec){sec=Math.round(sec);if(sec<60)return sec+'s';const m=Math.floor(sec/60);if(m<60)return m+'m';return Math.floor(m/60)+'h '+(m%60)+'m'}
+function catchUp(sec){
+  sec=Math.min(sec,MAX_AWAY);if(sec<2||!(state==='build'||state==='wave'))return;
+  catching=true;paused=false;tool=null;ghost=null;sel=null;quitAfter=false;
+  const w0=wave,k0=kills,l0=lives,total=sec;let left=sec;
+  ['ovStart','ovPause','ovOver'].forEach(o=>$(o).hidden=true);$('ovCatch').hidden=false;$('catchText').textContent=`Your fortress kept fighting for ${fmtAway(sec)}. Catching up…`;
+  const DT=.05,alive=()=>state==='build'||state==='wave';
+  const step=()=>{const t0=performance.now();
+    while(left>0&&alive()&&performance.now()-t0<28){if(state==='build'&&!isFinite(breakT))breakT=1;update(DT);left-=DT}
+    parts=[];floaters=[];beams=[];rings=[];
+    $('catchWave').textContent='Wave '+wave;$('catchFill').style.width=Math.round(100*(1-Math.max(0,left)/total))+'%';
+    if(left>0&&alive())setTimeout(step,0);else finish()};
+  const finish=()=>{catching=false;$('ovCatch').hidden=true;parts=[];floaters=[];beams=[];rings=[];banner=null;last=performance.now();
+    const sum=`While you were away (${fmtAway(total-Math.max(0,left))}): waves ${w0}–${wave} · ${(kills-k0).toLocaleString()} kills · castle ${l0} → ${lives}`;
+    if(state==='over'){$('overSub').textContent=sum+'. '+$('overSub').textContent;showOv('ovOver')}
+    else{showOv(null);banner={t:5,text:lives<l0?`Castle ${l0} → ${lives}`:'Held strong!',sub:`Away ${fmtAway(total)} · waves ${w0}–${wave} · ${(kills-k0).toLocaleString()} kills`};writeSave();refreshBar()}};
+  step()}
+let leftAt=0;
+setInterval(()=>{if(!document.hidden&&!catching&&!paused&&gm==='stand'&&wave>0&&(state==='wave'||state==='build'))writeSave()},5000);
 function quitToTitle(){writeSave();paused=false;quitAfter=false;state='title';foes=[];shots=[];setPlaying(false);showOv('ovStart');$('saveNote').textContent='Run saved. Tap Continue whenever you are ready.';refreshBar()}
 function resume(){paused=false;showOv(null);last=performance.now()}
 $('pauseBtn').onclick=()=>{if(paused)resume();else if(state==='build'||state==='wave')pauseGame()};
 $('resumeBtn').onclick=resume;
-document.addEventListener('visibilitychange',()=>{if(document.hidden&&(state==='build'||state==='wave')){if(!paused)pauseGame();if(state==='build')writeSave()}});
+document.addEventListener('visibilitychange',()=>{const run=state==='build'||state==='wave';
+  if(document.hidden){if(!run||catching)return;if(runIdle()&&!paused){leftAt=Date.now();writeSave(leftAt);return}if(!paused)pauseGame();writeSave();return}
+  if(leftAt){const away=(Date.now()-leftAt)/1000;leftAt=0;if(run&&runIdle())catchUp(away)}});
 // map picker
 let chosen=0; // the game ships with the Open Field map only
 MAPS.forEach((m,i)=>{const b=document.createElement('button');b.type='button';b.className='map';b.setAttribute('aria-pressed',i===chosen?'true':'false');
@@ -971,27 +1009,34 @@ function showModes(){[...$('modes').children].forEach(b=>b.setAttribute('aria-pr
 [...$('modes').children].forEach(b=>b.onclick=()=>{chosenMode=b.dataset.m;try{localStorage.setItem('bs_mode',chosenMode)}catch(e){};boardMode=chosenMode;showModes();renderBoard()});
 $('startBtn').onclick=()=>{gm=chosenMode;if(saveData)clearSave();newGame(chosen)};
 $('againBtn').onclick=()=>{showOv('ovStart');state='title';foes=[];refreshBar()};
-$('contBtn').onclick=()=>{if(saveData){gm=saveData.gm||'stand';restoreSave(saveData)}};
+$('contBtn').onclick=()=>{if(!saveData)return;const d=saveData;gm=d.gm||'stand';restoreSave(d);
+  if(runIdle()&&d.live)catchUp((Date.now()-d.at)/1000);else if(state==='wave')pauseGame()};
 $('saveBtn').onclick=()=>{if(state==='wave'){quitAfter=true;resume();floater(W/2,H/2,'SAVING AFTER THIS WAVE',C.amber,1.6);return}quitToTitle()};
 
 // ---------- Save between waves (this device, this season)
 let saveData=null;
-function snapshot(){return {v:3,gm,kills,combos:{...comboCount},found:[...comboFound],week:weekKey(),at:Date.now(),mapIdx,wave,score,lives,coins,combo,bestCombo,bossesBeaten,jStreak,heat,towers:towers.map(t=>({k:t.k,c:t.c,r:t.r,lvl:t.lvl,spent:t.spent,mode:t.mode}))}}
-function writeSave(){if(state!=='build')return;saveData=snapshot();try{localStorage.setItem('bs_save',JSON.stringify(saveData))}catch(e){}refreshContinue()}
+function snapshot(){const d={v:4,gm,kills,combos:{...comboCount},found:[...comboFound],week:weekKey(),at:Date.now(),mapIdx,wave,score,lives,coins,combo,bestCombo,bossesBeaten,jStreak,heat,towers:towers.map(t=>({k:t.k,c:t.c,r:t.r,lvl:t.lvl,spent:t.spent,mode:t.mode,cd:t.cd,stun:t.stun,pulse:t.pulse||0}))};
+  if(gm==='stand'&&wave>0){Object.assign(d,{live:true,state,breakT:isFinite(breakT)?breakT:null,waveT,spawnQ,curMods:curMods.map(m=>m.id),maxProg,leaksWave,leaked,seen:[...seen],
+    foes:foes.filter(f=>!f.dead).map(f=>({...f,def:f.def?BOSSES.indexOf(f.def):undefined})),clouds:clouds.map(g=>({...g}))})}
+  return d}
+function writeSave(at){if(state!=='build'&&!(gm==='stand'&&state==='wave'))return;if(catching)return;saveData=snapshot();if(at)saveData.at=at;try{localStorage.setItem('bs_save',JSON.stringify(saveData))}catch(e){}refreshContinue()}
 function clearSave(){saveData=null;try{localStorage.removeItem('bs_save')}catch(e){}refreshContinue()}
 function readSave(){let d=null;try{d=JSON.parse(localStorage.getItem('bs_save')||'null')}catch(e){}
   if(d&&d.week!==weekKey()){clearSave();$('saveNote').textContent='Your saved run was from last season, so it was cleared for the new leaderboard.';return}
-  if(d&&d.v===3)saveData=d;refreshContinue()}
-function refreshContinue(){const b=$('contBtn');b.hidden=!saveData;if(saveData)b.textContent=saveData.wave?`Continue · wave ${saveData.wave+1} · castle ${saveData.lives}`:'Continue building';$('startBtn').textContent=saveData?'New game':'Play'}
+  if(d&&d.v===4)saveData=d;refreshContinue()}
+function refreshContinue(){const b=$('contBtn');b.hidden=!saveData;if(saveData){const away=(Date.now()-saveData.at)/1000;b.textContent=!saveData.wave?'Continue building':idleOn&&saveData.live&&away>=60?`Continue · catch up ${fmtAway(Math.min(away,MAX_AWAY))}`:`Continue · wave ${saveData.wave+(saveData.state==='wave'?0:1)} · castle ${saveData.lives}`}$('startBtn').textContent=saveData?'New game':'Play'}
 function restoreSave(d){newGame(d.mapIdx);
   wave=d.wave;score=d.score;lives=d.lives;coins=d.coins;kills=d.kills||0;comboCount={...(d.combos||{})};comboFound=new Set(d.found||[]);combo=d.combo;bestCombo=d.bestCombo;bossesBeaten=d.bossesBeaten;jStreak=d.jStreak;heat=d.heat||0;
-  towers=d.towers.map(t=>({...t,cd:.2,ang:-Math.PI/2,stun:0,flash:0}));reflow();breakT=Infinity;banner={t:1.8,text:wave?'Wave '+(wave+1)+' next':'Back to building',sub:wave?'Welcome back! Press Send when you’re ready.':'Welcome back!'};
+  towers=d.towers.map(t=>({...t,cd:t.cd??.2,ang:-Math.PI/2,stun:t.stun||0,flash:0}));reflow();breakT=Infinity;banner={t:1.8,text:wave?'Wave '+(wave+1)+' next':'Back to building',sub:wave?'Welcome back! Press Send when you’re ready.':'Welcome back!'};
+  if(d.live){state=d.state;breakT=d.breakT==null?Infinity:d.breakT;waveT=d.waveT||0;spawnQ=d.spawnQ||[];maxProg=d.maxProg||0;leaksWave=d.leaksWave||0;leaked=!!d.leaked;
+    seen=new Set(d.seen||[]);curMods=(d.curMods||[]).map(id=>MODS.find(m=>m.id===id)).filter(Boolean);clouds=d.clouds||[];
+    foes=(d.foes||[]).map(o=>{const f={...o};if(o.boss)f.def=BOSSES[o.def];else delete f.def;return f});if(state==='wave')banner=null}
   clearSave();$('saveNote').textContent='';refreshBar()}
 
 // ---------- Loop
 let last=performance.now(),barT=0;
 function frame(t){const raw=Math.min(.05,(t-last)/1000);last=t;
-  if(!paused&&(state==='build'||state==='wave')){const steps=speed<=2?speed*2:speed,dt=raw*speed/steps;for(let i=0;i<steps&&(state==='build'||state==='wave');i++)update(dt)}
+  if(!paused&&!catching&&(state==='build'||state==='wave')){const steps=speed<=2?speed*2:speed,dt=raw*speed/steps;for(let i=0;i<steps&&(state==='build'||state==='wave');i++)update(dt)}
   updateFx(paused?0:raw*(state==='title'||state==='over'?1:speed));
   if(state==='title'){clock+=raw}
   draw();hud();barT-=raw;if(barT<=0){barT=.25;refreshBar()}
@@ -1061,7 +1106,7 @@ renderBoard();
 
 let lastRun=null;
 function gameOver(){
-  state='over';if(gm!=='stand')clearSave();tool=null;ghost=null;sel=null;
+  state='over';clearSave();tool=null;ghost=null;sel=null;
   const m=gm;lastRun={mode:m,score,wave,bosses:bossesBeaten,map:mapIdx,posted:false};boardMode=m;renderBoard();
   const wk=weekKey(),cur=STANDALONE?(api.mine?{wave:+api.mine.level||1,score:+api.mine.score}:null):mine[m]&&mine[m].week===wk?mine[m]:null,pb=!cur||beats(m,lastRun,cur)>0;
   if(m==='stand'){$('overScore').textContent='Wave '+wave;$('overSub').textContent=`Last Stand · ${MAP.n} · ${kills.toLocaleString()} kills · ${score.toLocaleString()} points${bossesBeaten?` · ${bossesBeaten} boss${bossesBeaten>1?'es':''}`:''}`+(Object.keys(comboCount).length?' · Combos: '+Object.keys(comboCount).map(k=>`${COMBOS[k].n.toLowerCase()} ×${comboCount[k]}`).join(', '):' · No combos found yet')}
